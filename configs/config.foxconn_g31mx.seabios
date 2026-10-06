@@ -8,10 +8,8 @@ CONFIG_ANY_TOOLCHAIN=y
 CONFIG_CONSOLE_SERIAL=y
 CONFIG_BOOTBLOCK_CONSOLE=y
 CONFIG_CONSOLE_POST=y
-CONFIG_DEFAULT_CONSOLE_LOGLEVEL_7=y
+CONFIG_DEFAULT_CONSOLE_LOGLEVEL_4=y
 
-# Verbose raminit logging and a read/write verification of the array.
-CONFIG_DEBUG_RAM_SETUP=y
 CONFIG_ROM_SIZE=0x00080000
 
 # Coreboot's pinned SeaBIOS release, with COM1 diagnostics and serial console.

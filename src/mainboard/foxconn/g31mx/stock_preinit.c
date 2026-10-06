@@ -11,7 +11,6 @@
  */
 
 #include <arch/io.h>
-#include <console/console.h>
 #include <delay.h>
 #include <device/mmio.h>
 #include <device/pci_def.h>
@@ -507,7 +506,6 @@ static void smbus_ssid(void)
 
 void g31mx_stock_preinit(void)
 {
-	printk(BIOS_DEBUG, "G31MX: vendor pre-MRC chipset program\n");
 	lpc_table();
 	pmcon3();
 	ich_gpio();
@@ -524,5 +522,4 @@ void g31mx_stock_preinit(void)
 	tpm_wait();
 	smbus_ssid();
 	RCBA32(GCS) |= 1 << 5;
-	printk(BIOS_DEBUG, "G31MX: vendor pre-MRC chipset program done\n");
 }
