@@ -276,6 +276,11 @@ $(obj)/UniversalPayload.fit: $(DOTCONFIG)
 		EDK2_UNIVERSAL_PAYLOAD_OUT="$(abspath $@)" \
 		$(EDK2_PAYLOAD_ARGS)
 
+cbfs-files-$(CONFIG_EDK2_SECONDARY_PAYLOAD) += img/edk2
+img/edk2-file := $(obj)/UEFIPAYLOAD.fd
+img/edk2-type := payload
+img/edk2-compression := $(CBFS_SECONDARY_PAYLOAD_COMPRESS_FLAG)
+
 # FILO
 
 filo:
