@@ -27,6 +27,8 @@
 #include <console/console.h>
 #include <delay.h>
 #include <device/pci_ops.h>
+#include <device/device.h>
+#include <device/pci_def.h>
 #include <device/mmio.h>
 #include <device/smbus_host.h>
 #include <southbridge/intel/common/rcba.h>
@@ -824,13 +826,14 @@ static bool g31_host_map(struct sysinfo *s)
 	const u16 ggc = pci_read_config16(HOST_BRIDGE, D0F0_GGC);
 	const u32 gms = gms_mib[(ggc >> 4) & 7];
 	const u32 gtt = ggms_mib[(ggc >> 8) & 3];
-	const u32 tseg = CONFIG_SMM_RESERVED_SIZE >> 20;
+	/* 2 MiB, as native x4x: TSEG also holds the SMM stage cache. */
+	const u32 tseg = 2;
 	/*
 	 * The reference code takes the size of the hole below 4 GiB from its
-	 * caller. Everything from the ECAM window upwards has to stay MMIO, so
-	 * that base is the ceiling for DRAM below 4 GiB.
+	 * caller. The vendor BIOS passes 768 MiB (stock TOLUD 0xd0000000),
+	 * which also keeps the ECAM window above TOLUD.
 	 */
-	const u32 ceiling = CONFIG_ECAM_MMCONF_BASE_ADDRESS >> 20;
+	const u32 ceiling = MIN(4096 - 768, CONFIG_ECAM_MMCONF_BASE_ADDRESS >> 20);
 	u32 top = s->channel_capacity[0] + s->channel_capacity[1];
 	u32 tolud = MIN(ceiling, top);
 	u32 touud, gbsm, bgsm, tsegbase;
@@ -865,6 +868,8 @@ static bool g31_host_map(struct sysinfo *s)
 	pci_write_config32(HOST_BRIDGE, D0F0_GBSM, gbsm << 20);
 	pci_write_config32(HOST_BRIDGE, D0F0_BGSM, bgsm << 20);
 	pci_write_config32(HOST_BRIDGE, D0F0_TSEG, tsegbase << 20);
+	/* Enable TSEG with a 2 MiB size. */
+	pci_update_config8(HOST_BRIDGE, D0F0_ESMRAMC, ~0x07, (1 << 1) | (1 << 0));
 
 	return remap;
 }
@@ -1241,6 +1246,15 @@ void g31_sdram_initialize(int boot_path, const u8 *spd_map)
 	g31_script30(&s);
 	g31_rank_decode(&s);
 	g31_channel_decode(&s);
+	if (!is_devfn_enabled(PCI_DEVFN(2, 0))) {
+		/*
+		 * Like the vendor BIOS with an add-in graphics card: disable
+		 * the IGD and its stolen memory so it neither decodes legacy
+		 * VGA cycles nor reserves memory below TOLUD.
+		 */
+		pci_write_config16(HOST_BRIDGE, D0F0_GGC, 1 << 1);
+		pci_and_config32(HOST_BRIDGE, D0F0_DEVEN, ~(IGD0EN | IGD1EN));
+	}
 	remap = g31_host_map(&s);
 	g31_final_decode(&s, remap);
 
