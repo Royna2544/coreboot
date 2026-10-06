@@ -31,37 +31,7 @@ static inline int g31_fsb_mode(enum fsb_clock fsb)
 /* Channel 1 register window offset. */
 #define G31_CH1			0x400
 
-/*
- * POST codes. These are the codes the OEM reference code passes to its
- * progress callback, in its own order, so a port-0x80 capture of this
- * implementation lines up with a capture of the stock firmware.
- */
-#define G31_POST_CLKCFG		0x24
-#define G31_POST_CLKDLL		0x27
-#define G31_POST_SCRIPT28	0x28
-#define G31_POST_SCRIPT29	0x29
-#define G31_POST_TIMINGS	0x31
-#define G31_POST_ANALOG		0x32
-#define G31_POST_SIGGROUPS	0x33
-#define G31_POST_SCRIPT34	0x34
-#define G31_POST_WAIT_CAL	0x35
-#define G31_POST_TEMP_DECODE	0x36
-#define G31_POST_PRE_JEDEC	0x38
-#define G31_POST_JEDEC		0x39
-#define G31_POST_REFRESH_CFG	0x41
-#define G31_POST_REFRESH_EN	0x42
-#define G31_POST_RCVEN		0x81
-#define G31_POST_RCVEN_APPLY	0x83
-#define G31_POST_READ_LATENCY	0x84
-#define G31_POST_SCRIPT30	0x30
-#define G31_POST_RANK_DECODE	0x43
-#define G31_POST_CHAN_DECODE	0x44
-#define G31_POST_HOST_MAP	0x45
-#define G31_POST_FINAL_DECODE	0x46
-#define G31_POST_DONE		0x47
-
-/* Codes this implementation adds for the parts the OEM code does silently. */
-#define G31_POST_SPD		0x20
+/* Fatal checkpoints; normal-path OEM stage numbers are not emitted. */
 #define G31_POST_NO_MEMORY	0xe0	/* not unique to missing memory */
 #define G31_POST_UNSAFE_WARM_STATE	0xe6
 #define G31_POST_UNSUPPORTED_RESUME	0xe7
@@ -69,7 +39,6 @@ static inline int g31_fsb_mode(enum fsb_clock fsb)
 #define G31_POST_WARM_CLOCK_MISMATCH	0xe9
 #define G31_POST_RESET_FAILED	0xec
 #define G31_POST_INITIAL_LATENCY_BAD	0xee
-#define G31_POST_RCVEN_RESTORE	0x82
 
 
 /*

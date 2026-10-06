@@ -5,29 +5,6 @@
 #define GEN_PMCON_2_DRAM_INIT	0x80
 #define GEN_PMCON_2_W1C	0x1d
 
-uint8_t g31_mrc_raw_pmcon_post(uint8_t pmcon2)
-{
-	return 0xa0 | (pmcon2 & 0x1f);
-}
-
-uint8_t g31_mrc_interrupted_post(uint8_t pmcon2, bool warm)
-{
-	/* 6x= cold, 7x= warm; x: SRS, thermal, CPU power, PWROK. */
-	uint8_t status = (pmcon2 & 0x03) | ((pmcon2 & 0x08) >> 1) |
-			 ((pmcon2 & 0x10) >> 1);
-
-	return (warm ? 0x70 : 0x60) | status;
-}
-
-uint8_t g31_mrc_interrupted_state_post(uint8_t pmcon2, bool warm,
-						   bool warm_reset)
-{
-	uint8_t status = g31_mrc_interrupted_post(pmcon2, false) & 0x0f;
-
-	/* Cold with WRO set implies the OEM selector saw no retained training. */
-	return (warm ? 0x90 : warm_reset ? 0x70 : 0x60) | status;
-}
-
 int g31_mrc_mark_start(const struct g31_mrc_service_ops *ops, void *ctx)
 {
 	uint8_t value = ops->read_pmcon2(ctx);

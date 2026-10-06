@@ -24,8 +24,6 @@
 #include "raminit.h"
 #include "x4x.h"
 
-#define POST(code) post_code(code)
-
 /* Derate a picosecond figure the way the reference code does. */
 #define DERATE(ps) ((u32)(ps) * 100 / 110)
 
@@ -276,8 +274,6 @@ void g31_dll_sweep(struct sysinfo *s)
 	int guard, allfail = 0, prepass;
 	u8 coarse, fine;
 
-	POST(G31_POST_ANALOG);
-
 	/* Preamble, in the reference code's order. */
 	mchbar_write8(0x199, g31_analog_199[mem_clk]);
 	mchbar_clrbits8(0x199, 1);
@@ -299,7 +295,6 @@ void g31_dll_sweep(struct sysinfo *s)
 				    fsb == 2 && mem_clk == 4, 128, &ops, NULL);
 	if (prepass < 0)
 		die("G31: pattern-test edge walk exceeded launch limit\n");
-	printk(RAM_DEBUG, "G31: pattern-test edge walk result 0x%02x\n", prepass);
 
 	/* OEM steps the phase once before the first main-sweep sample. */
 	err = g31_dll_first_sample(&sample_ops, NULL);
@@ -312,10 +307,8 @@ void g31_dll_sweep(struct sysinfo *s)
 		printk(BIOS_ERR, "G31: DLL sweep found no passing region\n");
 		goto fallback;
 	}
-	if (!err) {
-		printk(BIOS_DEBUG, "G31: DLL sweep already error free\n");
+	if (!err)
 		goto done;
-	}
 
 	left = dll_phase_ps(mem_clk);
 
@@ -353,7 +346,6 @@ void g31_dll_sweep(struct sysinfo *s)
 	}
 
 	mchbar_clrsetbits8(G31_DLL_PHASE, 0x7f, (fine << 4) | coarse);
-	printk(BIOS_DEBUG, "G31: DLL phase coarse %d fine %d\n", coarse, fine);
 
 done:
 	mchbar_clrbits16(0x5e8, 1 << 14);
@@ -461,8 +453,6 @@ void g31_rcven_train(struct sysinfo *s)
 	const u16 tck = g31_tck_ps[mem_clk];
 	int ch, lane, rank;
 
-	POST(G31_POST_RCVEN);
-
 	mchbar_clrbits8(G31_RCVEN_TRIG(0), 0x0c);
 	mchbar_clrbits8(G31_RCVEN_TRIG(1), 0x0c);
 	mchbar_clrbits8(G31_RCVEN_RESET, 0x80);
@@ -500,8 +490,6 @@ void g31_rcven_train(struct sysinfo *s)
 			results[lane] = (u32)(trained.coarse + 1) * tck / 4
 					+ trained.fine * g31_rl_fine[mem_clk - 1];
 			min = MIN(min, results[lane]);
-			printk(RAM_DEBUG, "G31: CH%d lane %d rcven %d ps\n",
-			       ch, lane, results[lane]);
 		}
 
 		/* Pack as one common coarse value plus eight per-lane offsets. */
@@ -517,8 +505,7 @@ void g31_rcven_train(struct sysinfo *s)
 		if (g31_rcven_install(s->rcven_t[ch].coarse_offset,
 				      G31_RCVEN_FINE(ch), rcven_write16, NULL))
 			die("G31: receive-enable lane offsets are invalid\n");
-		printk(BIOS_DEBUG, "G31: CH%d common coarse %d\n",
-		       ch, s->rcven_t[ch].min_common_coarse);
+
 	}
 }
 
@@ -527,7 +514,6 @@ void g31_rcven_apply(struct sysinfo *s)
 {
 	int ch, lane;
 
-	POST(G31_POST_RCVEN_APPLY);
 	for (ch = 0; ch < 2; ch++) {
 		const u32 o = ch * G31_CH1;
 
@@ -571,8 +557,6 @@ void g31_read_latency(struct sysinfo *s)
 	const int count = g31_rl_count[idx];
 	const int edi = 2 * g31_rl_f[mem_clk][0] + 4 - g31_rl_f[mem_clk][1];
 	int ch;
-
-	POST(G31_POST_READ_LATENCY);
 
 	if (!count || count > 5 || !fsb_der)
 		die("G31: no valid read latency candidates for this speed\n");
@@ -620,7 +604,5 @@ void g31_read_latency(struct sysinfo *s)
 
 		mchbar_clrsetbits16(G31_READ_LATENCY(ch), 0x1f00, (u32)top << 8);
 		mchbar_write16(G31_READ_LAT_MASK(ch), mask);
-		printk(BIOS_DEBUG, "G31: CH%d read latency %d, below-max mask 0x%02x\n",
-		       ch, top, mask);
 	}
 }

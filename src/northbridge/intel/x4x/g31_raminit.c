@@ -3,11 +3,10 @@
 /*
  * Intel G31 (Bearlake) DRAM initialisation.
  *
- * This follows the step order of the OEM BIOS' BLMRC220.006 reference code and
- * reuses its POST codes, so a port-0x80 trace of this code can be compared
- * directly against a trace of the stock firmware. reference/re/memory-training.md
- * in the project root documents every register and table, and says which claims
- * were reproduced from a capture of the stock firmware's runtime state.
+ * This follows the step order of the OEM BIOS' BLMRC220.006 reference code.
+ * reference/re/memory-training.md in the project root documents every register
+ * and table, and says which claims were reproduced from a capture of the stock
+ * firmware's runtime state.
  *
  * The per-bytelane phase computation the reference code performs after the DLL
  * sweep is in g31_phase.c, and its edge-walk pre-pass is in g31_prepass.c. Both
@@ -45,8 +44,6 @@
 #include "x4x.h"
 
 
-#define POST(code) post_code(code)
-
 /* Minimum clocks for each timing parameter; see section 5 of the write-up. */
 static const u8 g31_timing_min[8] = { 9, 3, 3, 0, 15, 0, 0, 0 };
 /* Largest value each timing field can hold. */
@@ -78,7 +75,6 @@ static void g31_read_spd(struct g31_dimm dimms[4], const u8 *spd_map)
 	int i, j, value;
 	u8 checksum;
 
-	POST(G31_POST_SPD);
 	for (i = 0; i < 4; i++) {
 		if (!spd_map[i])
 			continue;
@@ -118,7 +114,6 @@ static void g31_read_spd(struct g31_dimm dimms[4], const u8 *spd_map)
 			die("G31: unsupported SPD geometry or timing encoding\n");
 
 		dimms[i].present = true;
-		printk(BIOS_DEBUG, "G31: DIMM%d present at SMBus 0x%02x\n", i, spd_map[i]);
 	}
 }
 
@@ -163,8 +158,6 @@ static void g31_dimm_config(struct sysinfo *s)
 				code = 1;		/* single rank x8 */
 			s->dimm_config[ch] |= code << ((i & 1) * 2);
 		}
-		printk(BIOS_DEBUG, "G31: rank/type nibble CH%d = 0x%x\n",
-		       ch, s->dimm_config[ch]);
 	}
 }
 
@@ -231,8 +224,6 @@ static enum cb_err g31_pick_timings(struct sysinfo *s, struct g31_dimm dimms[4])
 				s->selected_timings.mem_clk = clk;
 				s->selected_timings.CAS = cl;
 				s->selected_timings.tclk = g31_tck_ps[clk];
-				printk(BIOS_DEBUG, "G31: DDR2-%d CL%d\n",
-				       g31_mem_rate[clk], cl);
 				return CB_SUCCESS;
 			}
 			work &= ~(1 << cl);
@@ -283,18 +274,12 @@ static enum cb_err g31_pick_dram_timings(struct sysinfo *s, struct g31_dimm dimm
 		*out[p] = g31_timing_min[p] + field;
 	}
 
-	printk(BIOS_DEBUG, "G31: tRAS %d tRP %d tRCD %d tWR %d tRFC %d tWTR %d"
-	       " tRRD %d tRTP %d\n", s->selected_timings.tRAS, s->selected_timings.tRP,
-	       s->selected_timings.tRCD, s->selected_timings.tWR,
-	       s->selected_timings.tRFC, s->selected_timings.tWTR,
-	       s->selected_timings.tRRD, s->selected_timings.tRTP);
 	return CB_SUCCESS;
 }
 
 /* Step POST 0x24: program CLKCFG and read back what the hardware accepted. */
 static enum cb_err g31_clkcfg(struct sysinfo *s)
 {
-	POST(G31_POST_CLKCFG);
 	mchbar_clrsetbits32(CLKCFG_MCHBAR, CLKCFG_MEMCLK_MASK,
 			    (s->selected_timings.mem_clk << CLKCFG_MEMCLK_SHIFT)
 			    | CLKCFG_UPDATE);
@@ -328,7 +313,6 @@ static void g31_clock_dll(struct sysinfo *s)
 			+ s->selected_timings.mem_clk - 1;
 	int i;
 
-	POST(G31_POST_CLKDLL);
 	mchbar_write32(0xc04, g31_clk_c04[idx]);
 	mchbar_write32(0xc50, g31_clk_c50[idx]);
 	mchbar_write32(0xc54, g31_clk_c54[idx]);
@@ -347,7 +331,6 @@ static void g31_stage28(struct sysinfo *s)
 	const int idx = g31_fsb_mode(s->selected_timings.fsb_clk) * 4 + mem_clk - 1;
 	int ch;
 
-	POST(G31_POST_SCRIPT28);
 	mchbar_clrsetbits16(0x1fa, 0x0ff0, g31_stage28_ctrl[idx][0] << 4);
 	mchbar_clrsetbits16(0x1f8, 0x3f00, g31_stage28_ctrl[idx][1] << 8);
 	mchbar_setbits8(0x1f8, 1 << 5);
@@ -370,7 +353,6 @@ static void g31_stage29(struct sysinfo *s)
 	const int idx = 3 * mem_clk + cas - 3;
 	int ch;
 
-	POST(G31_POST_SCRIPT29);
 	if (cas < 3 || cas > 6 || idx >= ARRAY_SIZE(g31_stage29_224))
 		die("G31: unsupported CAS for POST 0x29\n");
 	for (ch = 0; ch < 2; ch++) {
@@ -390,7 +372,6 @@ static void g31_signal_groups(struct sysinfo *s)
 	const int mem_clk = s->selected_timings.mem_clk;
 	int ch, g, cls, rt, val;
 
-	POST(G31_POST_SIGGROUPS);
 	for (ch = 0; ch < 2; ch++) {
 		if (!s->dimm_config[ch])
 			continue;
@@ -449,7 +430,6 @@ static void g31_wait_calibration(void)
 {
 	int timeout = 100000;
 
-	POST(G31_POST_WAIT_CAL);
 	while ((mchbar_read8(G31_CAL_CTRL) & 1) && --timeout)
 		udelay(1);
 	if (!timeout)
@@ -493,7 +473,6 @@ static void g31_program_timings(struct sysinfo *s)
 			 (s->dimms[2].width == CHIP_WIDTH_x16);
 	int ch;
 
-	POST(G31_POST_TIMINGS);
 	for (ch = 0; ch < 2; ch++) {
 		const u32 o = ch * G31_CH1;
 		u32 v;
@@ -576,7 +555,6 @@ static void g31_script30(struct sysinfo *s)
 			s->selected_timings.mem_clk, ARRAY_SIZE(g31_script30_115));
 	int ch;
 
-	POST(G31_POST_SCRIPT30);
 	if (idx < 0)
 		die("G31: unsupported CL/memory clock for script 30\n");
 	mchbar_clrbits8(0xf18, 1);
@@ -612,7 +590,6 @@ static void g31_script34(struct sysinfo *s)
 {
 	int ch;
 
-	POST(G31_POST_SCRIPT34);
 	for (ch = 0; ch < 2; ch++) {
 		const u32 o = ch * G31_CH1;
 
@@ -628,7 +605,6 @@ static void g31_script34(struct sysinfo *s)
 /* Step POST 0x36: temporary rank decode, valid only until step POST 0x43. */
 static void g31_temp_decode(void)
 {
-	POST(G31_POST_TEMP_DECODE);
 	mchbar_clrsetbits32(0x260, 1, 0x00f00000);
 	mchbar_clrsetbits32(0x660, 1, 0x00f00000);
 	mchbar_write32(0x208, 0x01010101);
@@ -658,7 +634,6 @@ static void g31_pre_jedec(struct sysinfo *s)
 {
 	int ch;
 
-	POST(G31_POST_PRE_JEDEC);
 	mchbar_setbits8(0x40, 1 << 1);
 	for (ch = 0; ch < 2; ch++)
 		if (s->dimm_config[ch])
@@ -691,7 +666,6 @@ static void g31_jedec_init(struct sysinfo *s, const struct g31_cold_ops *ops)
 			   | ((s->selected_timings.tWR - 1) << 9) | 0xb;
 	int ch, r, i;
 
-	POST(G31_POST_JEDEC);
 	udelay(200);
 
 	FOR_EACH_POPULATED_RANK(s->dimms, ch, r) {
@@ -707,7 +681,6 @@ static void g31_jedec_init(struct sysinfo *s, const struct g31_cold_ops *ops)
 			udelay(1);
 		}
 	}
-	printk(BIOS_DEBUG, "G31: JEDEC init done\n");
 }
 
 /* Step POST 0x41. */
@@ -717,7 +690,6 @@ static void g31_refresh_config(struct sysinfo *s)
 			+ g31_fsb_mode(s->selected_timings.fsb_clk) * 4;
 	int ch;
 
-	POST(G31_POST_REFRESH_CFG);
 	mchbar_clrbits8(0x40, 1 << 1);
 
 	for (ch = 0; ch < 2; ch++) {
@@ -739,7 +711,6 @@ static void g31_refresh_config(struct sysinfo *s)
 /* Step POST 0x42: set INITDONE and REFEN on both channels. */
 static void g31_refresh_enable(void)
 {
-	POST(G31_POST_REFRESH_EN);
 	mchbar_setbits32(0x268, 0xc0000000);
 	mchbar_setbits32(0x668, 0xc0000000);
 }
@@ -750,8 +721,6 @@ static void g31_rank_decode(struct sysinfo *s)
 	u32 dra[2] = { 0, 0 };
 	u8 rank_mask = 0;
 	int ch, r, i;
-
-	POST(G31_POST_RANK_DECODE);
 
 	for (i = 0; i < 8; i++) {
 		const int dimm = i >> 1;
@@ -794,7 +763,6 @@ static void g31_rank_decode(struct sysinfo *s)
 			mchbar_write16(G31_DRB(ch, r), run);
 		}
 		s->channel_capacity[ch] = run << 6;	/* MiB */
-		printk(BIOS_DEBUG, "G31: CH%d = %d MiB\n", ch, s->channel_capacity[ch]);
 	}
 
 	/* Asymmetric channels get the stacked channel-1 mapping. */
@@ -821,7 +789,6 @@ static void g31_channel_decode(struct sysinfo *s)
 	const int inter = s->stacked_mode ? 0 : 2 * MIN(c0, c1);
 	u8 mode;
 
-	POST(G31_POST_CHAN_DECODE);
 	if (c0 + c1 < 256)
 		printk(BIOS_ERR, "G31: less than 256 MiB of memory\n");
 
@@ -869,7 +836,6 @@ static bool g31_host_map(struct sysinfo *s)
 	u32 touud, gbsm, bgsm, tsegbase;
 	bool remap;
 
-	POST(G31_POST_HOST_MAP);
 	remap = (top - tolud) > 0x40;
 	if (remap) {
 		u32 rbase, rlimit;
@@ -900,8 +866,6 @@ static bool g31_host_map(struct sysinfo *s)
 	pci_write_config32(HOST_BRIDGE, D0F0_BGSM, bgsm << 20);
 	pci_write_config32(HOST_BRIDGE, D0F0_TSEG, tsegbase << 20);
 
-	printk(BIOS_DEBUG, "G31: TOLUD %d MiB TOUUD %d MiB TSEG %d MiB remap %s\n",
-	       tolud, touud, tsegbase, remap ? "on" : "off");
 	return remap;
 }
 
@@ -915,7 +879,6 @@ static void g31_final_decode(struct sysinfo *s, bool remap)
 	u32 mch20 = 0x00013001;
 	u16 fsb_bits;
 
-	POST(G31_POST_FINAL_DECODE);
 	mchbar_write32(0xfa8, g31_fa8[g31_fsb_mode(s->selected_timings.fsb_clk)]);
 
 	for (ch = 0; ch < 2; ch++) {
@@ -1182,15 +1145,13 @@ void g31_sdram_initialize(int boot_path, const u8 *spd_map)
 		die("G31: unknown FSB strap in CLKCFG\n");
 	}
 	s.max_fsb = s.selected_timings.fsb_clk;
-	printk(BIOS_DEBUG, "G31: FSB %d MT/s\n",
-	       g31_fsb_rate[g31_fsb_mode(s.selected_timings.fsb_clk)]);
 
 	/* Reference detect phase 1 writes MCHBAR 0xc23 before reading SPD. */
 	mchbar_write8(0xc23, 0x06);
 	g31_read_spd(dimms, spd_map);
 	if (!dimms[0].present && !dimms[1].present &&
 	    !dimms[2].present && !dimms[3].present) {
-		POST(G31_POST_NO_MEMORY);
+		post_code(G31_POST_NO_MEMORY);
 		die("G31: no DIMM detected\n");
 	}
 	/* Reference detect phase 3: 0xc20 and 0xc22, then 0xc21 at its end. */
@@ -1232,18 +1193,15 @@ void g31_sdram_initialize(int boot_path, const u8 *spd_map)
 		die_with_post_code(G31_POST_RESET_FAILED,
 				   "G31: CF9 reset returned after DRAM_INIT recovery\n");
 	}
-	POST(0x01);
 	g31_mrc_timer_enable(&service_ops, NULL, &timer);
 
 	/* Clear the self-refresh status the reference code clears at POST 0x03. */
-	POST(0x03);
 	mchbar_setbits32(PMSTS_MCHBAR, PMSTS_BOTH_SELFREFRESH);
 
 	if (g31_step_selected(G31_STEP_CLOCK_CFG, boot_path) &&
 	    g31_clkcfg(&s) != CB_SUCCESS)
 		die("G31: memory clock is not compatible with the FSB\n");
 
-	POST(0x26);
 	mchbar_setbits16(0xc1c, 0x8000);
 	g31_clock_dll(&s);
 	if (g31_step_selected(G31_STEP_PATTERN_SETUP, boot_path))
@@ -1268,7 +1226,6 @@ void g31_sdram_initialize(int boot_path, const u8 *spd_map)
 	if (g31_step_selected(G31_STEP_RCVEN_TRAIN, boot_path))
 		g31_rcven_train(&s);
 	if (g31_step_selected(G31_STEP_RCVEN_RESTORE, boot_path)) {
-		POST(G31_POST_RCVEN_RESTORE);
 		if (g31_warm_restore(&warm_ops, NULL, retained_coarse, &recovered))
 			die_with_post_code(G31_POST_LOST_WARM_TRAINING,
 				"G31: retained receive-enable state changed\n");
@@ -1287,22 +1244,10 @@ void g31_sdram_initialize(int boot_path, const u8 *spd_map)
 	remap = g31_host_map(&s);
 	g31_final_decode(&s, remap);
 
-	POST(G31_POST_DONE);
 	mchbar_setbits8(G31_CAL_CTRL, 0x82);
-	POST(0x51);
 	g31_mrc_mark_end(&service_ops, NULL);
 	mchbar_setbits32(0xa30, 1 << 26);
-	POST(0x52);
 	g31_mrc_timer_disable(&service_ops, NULL, &timer);
-	/* OEM POST 0x54 only updates its local symmetric-channel bookkeeping. */
-	POST(0x54);
-
-	printk(BIOS_DEBUG, "G31: DRAM initialisation complete, %d MiB total\n",
-	       s.channel_capacity[0] + s.channel_capacity[1]);
-
-	/* Smoke-test a small region at 1 MiB; this does not verify the memory map. */
-	if (CONFIG(DEBUG_RAM_SETUP) && ram_check_nodie(1 * MiB))
-		die("G31: DRAM does not verify\n");
 
 	/* S3 resume is not supported here, so CBMEM always starts empty. */
 	if (cbmem_recovery(0))
