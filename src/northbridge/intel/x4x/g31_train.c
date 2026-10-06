@@ -156,7 +156,7 @@ static void g31_post_sweep_mask_channel(void *ctx, unsigned int ch)
 
 	for (rank = 0; rank < 4; rank++)
 		if (!RANK_IS_POPULATED(s->dimms, ch, rank))
-			mask |= 0x11000004 << rank;
+			mask |= 0x11000004U << rank;
 	mchbar_clrsetbits32(o + 0x5d8, ~0x00ffffc3U, mask);
 
 	switch (s->dimm_config[ch]) {
