@@ -9,3 +9,4 @@ ramstage-y += mainboard.c
 ramstage-y += peg.c
 ramstage-y += power.c
 ramstage-y += cpu_smbios.c
+ramstage-y += memory_smbios.c

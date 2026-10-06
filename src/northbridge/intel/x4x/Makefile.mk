@@ -15,6 +15,7 @@ romstage-y += romstage.c
 
 ifeq ($(CONFIG_NORTHBRIDGE_INTEL_G31),y)
 romstage-y += g31_raminit.c
+romstage-y += g31_memory_info.c
 romstage-y += g31_tables.c
 romstage-y += g31_cold.c
 romstage-y += g31_limits.c

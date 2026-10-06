@@ -39,6 +39,7 @@
 #include "g31.h"
 #include "g31_warm.h"
 #include "g31_mrc_services.h"
+#include "g31_memory_info.h"
 #include "g31_cold.h"
 #include "g31_limits.h"
 #include "g31_phase.h"
@@ -65,11 +66,6 @@ static const u8 g31_cas_spd[3][2] = { { 9, 10 }, { 23, 24 }, { 25, 26 } };
 
 enum {
 	T_RAS, T_RP, T_RCD, T_WR, T_RFC, T_WTR, T_RRD, T_RTP,
-};
-
-struct g31_dimm {
-	bool present;
-	u8 spd[64];
 };
 
 static void g31_read_spd(struct g31_dimm dimms[4], const u8 *spd_map)
@@ -1297,4 +1293,6 @@ void g31_sdram_initialize(int boot_path, const u8 *spd_map)
 	/* S3 resume is not supported here, so CBMEM always starts empty. */
 	if (cbmem_recovery(0))
 		die("G31: CBMEM initialization failed\n");
+	if (g31_setup_memory_info(&s, dimms) != CB_SUCCESS)
+		printk(BIOS_WARNING, "G31: memory metadata unavailable\n");
 }
