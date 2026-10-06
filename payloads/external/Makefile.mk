@@ -123,6 +123,15 @@ $(call add_intermediate, seabios_ps2_timeout, $(CBFSTOOL))
 endif
 endif
 
+ifneq ($(CONFIG_SEABIOS_USB_TIME_SIGATT),)
+ifneq ($(CONFIG_SEABIOS_USB_TIME_SIGATT),0)
+$(call add_intermediate, seabios_usb_time_sigatt, $(CBFSTOOL))
+	@printf "    SeaBIOS    Wait up to $(CONFIG_SEABIOS_USB_TIME_SIGATT) ms for USB devices to attach\n"
+	$(if $(CONFIG_UPDATE_IMAGE),-$(CBFSTOOL) $< remove -n etc/usb-time-sigatt 2>/dev/null)
+	$(CBFSTOOL) $< add-int -i $(CONFIG_SEABIOS_USB_TIME_SIGATT) -n etc/usb-time-sigatt
+endif
+endif
+
 ifeq ($(CONFIG_SEABIOS_ADD_SERCON_PORT_FILE),y)
 $(call add_intermediate, seabios_sercon, $(CBFSTOOL))
 	@printf "    SeaBIOS    Add sercon-port file\n"

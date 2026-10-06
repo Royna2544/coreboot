@@ -52,6 +52,16 @@ config SEABIOS_PS2_TIMEOUT
 	  after powering on. This specifies how long SeaBIOS will wait for the
 	  keyboard controller to become ready before giving up.
 
+config SEABIOS_USB_TIME_SIGATT
+	prompt "USB device attach timeout (milliseconds)"
+	default 0
+	int
+	help
+	  How long SeaBIOS waits for a device to appear on a USB root hub port.
+	  0 keeps SeaBIOS' default of 100 ms. EHCI hands full-speed devices to
+	  its UHCI/OHCI companion controllers only after a port reset, which can
+	  take longer than that, so such devices can be missed.
+
 config SEABIOS_THREAD_OPTIONROMS
 	prompt "Hardware init during option ROM execution"
 	default n
