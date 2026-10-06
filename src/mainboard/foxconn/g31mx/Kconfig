@@ -20,6 +20,13 @@ config MAINBOARD_DIR
 config MAINBOARD_PART_NUMBER
 	default "G31MX Series"
 
+# No per-board serial or fitted PCB revision has been verified.
+config MAINBOARD_SERIAL_NUMBER
+	default ""
+
+config MAINBOARD_VERSION
+	default ""
+
 config POST_IO_PORT
 	default 0x80
 
