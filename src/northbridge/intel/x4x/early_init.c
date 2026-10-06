@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 
 #include <stdint.h>
+#include <device/pci_def.h>
 #include <device/pci_ops.h>
 #if CONFIG(SOUTHBRIDGE_INTEL_I82801GX)
 #include <southbridge/intel/i82801gx/i82801gx.h> /* DEFAULT_PMBASE */
@@ -13,6 +14,11 @@
 
 void x4x_early_init(void)
 {
+	if (CONFIG(NORTHBRIDGE_INTEL_G31) &&
+	    pci_read_config16(HOST_BRIDGE, PCI_DEVICE_ID) != 0x29c0)
+		die_with_post_code(POSTCODE_HW_INIT_FAILURE,
+			"G31 northbridge device ID does not match 8086:29c0\n");
+
 	/* Setup MCHBAR. */
 	pci_write_config32(HOST_BRIDGE, D0F0_MCHBAR_LO, CONFIG_FIXED_MCHBAR_MMIO_BASE | 1);
 
@@ -22,8 +28,16 @@ void x4x_early_init(void)
 	/* Setup EPBAR. */
 	pci_write_config32(HOST_BRIDGE, D0F0_EPBAR_LO, CONFIG_FIXED_EPBAR_MMIO_BASE | 1);
 
-	/* Setup HECIBAR */
-	pci_write_config32(PCI_DEV(0, 3, 0), 0x10, DEFAULT_HECIBAR);
+	if (CONFIG(NORTHBRIDGE_INTEL_G31)) {
+		/*
+		 * DEVEN, GGC and PAM keep the values the vendor memory
+		 * reference code runs with; PAM is set after RAM init.
+		 */
+		return;
+	} else {
+		/* Setup HECIBAR */
+		pci_write_config32(PCI_DEV(0, 3, 0), 0x10, DEFAULT_HECIBAR);
+	}
 
 	/* Set C0000-FFFFF to access RAM on both reads and writes */
 	pci_write_config8(HOST_BRIDGE, D0F0_PAM(0), 0x30);
@@ -33,6 +47,9 @@ void x4x_early_init(void)
 	pci_write_config8(HOST_BRIDGE, D0F0_PAM(4), 0x33);
 	pci_write_config8(HOST_BRIDGE, D0F0_PAM(5), 0x33);
 	pci_write_config8(HOST_BRIDGE, D0F0_PAM(6), 0x33);
+
+	if (CONFIG(NORTHBRIDGE_INTEL_G31))
+		return;
 
 	if (!(pci_read_config32(HOST_BRIDGE, D0F0_CAPID0 + 4) & (1 << (46 - 32)))) {
 		/* Enable internal GFX */
