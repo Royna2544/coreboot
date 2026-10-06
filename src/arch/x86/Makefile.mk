@@ -86,6 +86,11 @@ bootblock-$(CONFIG_ASYNC_FILE_LOADING_CACHE) += region.c
 
 $(call src-to-obj,bootblock,$(dir)/id.S): $(obj)/build.h
 
+ifeq ($(CONFIG_COMPILER_LLVM_CLANG),y)
+# LLVM's integrated assembler rejects the 32-bit wrap in the reverse ID offsets.
+$(call src-to-obj,bootblock,$(dir)/id.S): CFLAGS_bootblock += -fno-integrated-as
+endif
+
 $(eval $(call link_stage,bootblock))
 
 ifeq ($(CONFIG_BOOTBLOCK_IN_CBFS),y)
