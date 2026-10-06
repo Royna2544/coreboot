@@ -78,6 +78,39 @@ files_added:: | build_complete
 .PHONY: finalised_rom
 finalised_rom:: | files_added
 
+ifeq ($(CONFIG_COMPILE_COMMANDS),y)
+define compile_commands_newline
+
+
+endef
+
+# $1 obj class
+compile-commands-entries=$(addsuffix .cmd.json,\
+	$(call src-to-obj,$(1),$(filter %.c %.S,$($(1)-srcs))))
+
+# Entries are recorded next to each object by util/scripts/compile_command.sh
+# when it is compiled. Objects that were not built have no entry and are
+# skipped.
+.PHONY: compile_commands
+build_complete:: compile_commands
+compile_commands: | coreboot
+	@printf "    GEN        compile_commands.json\n"
+	rm -f $(obj)/compile_commands.json.tmp
+	touch $(obj)/compile_commands.json.tmp
+	$(foreach class,$(classes),$(if $(call compile-commands-entries,$(class)), \
+		cat $(call compile-commands-entries,$(class)) \
+			>> $(obj)/compile_commands.json.tmp 2>/dev/null || true \
+		$(compile_commands_newline)))
+	{ printf '[\n'; sed '$$!s/$$/,/' $(obj)/compile_commands.json.tmp; printf ']\n'; } \
+		> $(obj)/compile_commands.json.new
+	rm -f $(obj)/compile_commands.json.tmp
+	if cmp -s $(obj)/compile_commands.json.new $(obj)/compile_commands.json; then \
+		rm -f $(obj)/compile_commands.json.new; \
+	else \
+		mv $(obj)/compile_commands.json.new $(obj)/compile_commands.json; \
+	fi
+endif
+
 # Optional post-build targets.
 .PHONY: capsule
 capsule::
