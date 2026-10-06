@@ -62,11 +62,19 @@ etc/grub.cfg-required := the GRUB runtime configuration file ($(CONFIG_GRUB2_RUN
 
 SEABIOS_CC_OFFSET=$(if $(filter %ccache,$(HOSTCC)),2,1)
 SEABIOS_TARGET_PATH=payloads/external/SeaBIOS/seabios/out/bios.bin.elf
+ifeq ($(CONFIG_COMPILER_LLVM_CLANG),y)
+# SeaBIOS' 16-bit build uses GCC-specific code generation and compiler flags.
+SEABIOS_CC=$(GCC_CC_x86_32)
+SEABIOS_CFLAGS=
+else
+SEABIOS_CC=$(word $(SEABIOS_CC_OFFSET),$(CC_x86_32))
+SEABIOS_CFLAGS=$(patsubst $(word $(SEABIOS_CC_OFFSET),$(CC_x86_32))%,,$(wordlist $(SEABIOS_CC_OFFSET),9999,$(CC_x86_32)))
+endif
 $(SEABIOS_TARGET_PATH): $(DOTCONFIG)
 	$(MAKE) -C payloads/external/SeaBIOS \
 			HOSTCC="$(HOSTCC)" \
-			CC=$(word $(SEABIOS_CC_OFFSET),$(CC_x86_32)) \
-			CFLAGS="$(patsubst $(word $(SEABIOS_CC_OFFSET),$(CC_x86_32))%,,$(wordlist $(SEABIOS_CC_OFFSET),9999,$(CC_x86_32)))" \
+			CC=$(SEABIOS_CC) \
+			CFLAGS="$(SEABIOS_CFLAGS)" \
 			LD=$(word 1,$(LD_x86_32)) LDFLAGS="$(patsubst $(word 1,$(LD_x86_32))%,,$(LD_x86_32))" \
 			OBJDUMP="$(OBJDUMP_x86_32)" \
 			OBJCOPY="$(OBJCOPY_x86_32)" STRIP="$(STRIP_x86_32)" \
