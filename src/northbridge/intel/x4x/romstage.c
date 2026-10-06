@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 
 #include <console/console.h>
+#include <device/pci_ops.h>
 #include <romstage_handoff.h>
 #include <southbridge/intel/common/pmclib.h>
 #include <arch/romstage.h>
@@ -13,6 +14,11 @@
 
 #include "raminit.h"
 #include "x4x.h"
+
+#if CONFIG(NORTHBRIDGE_INTEL_G31)
+#include "g31.h"
+#include "g31_warm.h"
+#endif
 
 __weak void mb_pre_raminit_setup(int s3_resume)
 {
@@ -35,16 +41,31 @@ void mainboard_romstage_entry(void)
 	s3_resume = southbridge_detect_s3_resume();
 	mb_pre_raminit_setup(s3_resume);
 
-	if (s3_resume)
-		boot_path = BOOT_PATH_RESUME;
-	if (mchbar_read32(PMSTS_MCHBAR) & PMSTS_WARM_RESET)
-		boot_path = BOOT_PATH_WARM_RESET;
+	if (CONFIG(NORTHBRIDGE_INTEL_G31)) {
+		boot_path = g31_select_boot_path(s3_resume,
+			mchbar_read32(PMSTS_MCHBAR),
+			mchbar_read8(G31_RCVEN_COARSE_OUT));
+	} else {
+		if (s3_resume)
+			boot_path = BOOT_PATH_RESUME;
+		if (mchbar_read32(PMSTS_MCHBAR) & PMSTS_WARM_RESET)
+			boot_path = BOOT_PATH_WARM_RESET;
+	}
 
 	mb_get_spd_map(spd_addr_map);
-	sdram_initialize(boot_path, spd_addr_map);
+	if (CONFIG(NORTHBRIDGE_INTEL_G31)) {
+		int i;
 
-	x4x_late_init();
-	printk(BIOS_DEBUG, "x4x late init complete\n");
+		g31_sdram_initialize(boot_path, spd_addr_map);
+		/* The mainboard set up DMI VC1 before RAM init, as the vendor BIOS. */
+		pci_write_config8(HOST_BRIDGE, D0F0_PAM(0), 0x30);
+		for (i = 1; i <= 6; i++)
+			pci_write_config8(HOST_BRIDGE, D0F0_PAM(i), 0x33);
+	} else {
+		sdram_initialize(boot_path, spd_addr_map);
+		x4x_late_init();
+		printk(BIOS_DEBUG, "x4x late init complete\n");
+	}
 
 	romstage_handoff_init(s3_resume);
 }
