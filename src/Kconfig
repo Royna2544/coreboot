@@ -129,6 +129,14 @@ config IWYU
 	  This runs each source file through the include-what-you-use tool
 	  to check the header includes.
 
+config COMPILE_COMMANDS
+	bool "Generate a compilation database (compile_commands.json)"
+	default y
+	help
+	  Record every C and assembly compiler invocation of the build and
+	  write them to compile_commands.json in the build directory, for use
+	  by clangd and other tools that understand compilation databases.
+
 config FMD_GENPARSER
 	bool "Generate flashmap descriptor parser using flex and bison"
 	default n

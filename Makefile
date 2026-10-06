@@ -349,6 +349,10 @@ MAKEFLAGS += -k
 SAVE_IWYU_OUTPUT := 2>&1 | grep "should\|\#include\|---\|include-list\|^[[:blank:]]\?\'" | tee -a $$(obj)/iwyu.txt
 endif
 
+ifeq ($(CONFIG_COMPILE_COMMANDS),y)
+RECORD_COMPILE_COMMAND := $(top)/util/scripts/compile_command.sh $$$$@.cmd.json $$$$<
+endif
+
 # Build Kconfig .ads if necessary
 ifeq ($(CONFIG_ROMSTAGE_ADA),y)
 romstage-srcs += $(obj)/romstage/$(notdir $(KCONFIG_AUTOADS))
@@ -411,7 +415,7 @@ $$(call src-to-obj,$1,$$(1).$2): $$(1).$2 $$(call create_ada_deps,$1,$$(call src
 el$(EMPTY)se
 $$(call src-to-obj,$1,$$(1).$2): $$(1).$2 $(KCONFIG_AUTOHEADER) $(4) | $(5)
 	@printf "    CC         $$$$(subst $$$$(obj)/,,$$$$(@))\n"
-	$(CC_$(1)) \
+	$(RECORD_COMPILE_COMMAND) $(CC_$(1)) \
 		-MMD $$$$(CPPFLAGS_$(1)) $$$$(CFLAGS_$(1)) -MT $$$$(@) \
 		$(3) -c -o $$$$@ $$$$< $(SAVE_IWYU_OUTPUT)
 end$(EMPTY)if
