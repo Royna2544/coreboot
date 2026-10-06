@@ -2,6 +2,7 @@
 
 #define __SIMPLE_DEVICE__
 
+#include <arch/cpuid.h>
 #include <bootstate.h>
 #include <console/console.h>
 #include <device/device.h>
@@ -29,17 +30,43 @@ static void g31mx_usb_final(void *unused)
 
 BOOT_STATE_INIT_ENTRY(BS_DEV_INIT, BS_ON_EXIT, g31mx_usb_final, NULL);
 
+/* Number of logical CPUs sharing the L2 cache, from CPUID leaf 4. */
+static unsigned int l2_sharing(void)
+{
+	struct cpuid_result r;
+	unsigned int i;
+
+	for (i = 0; i < 8; i++) {
+		r = cpuid_ext(4, i);
+		if (!(r.eax & 0x1f))
+			break;
+		if (((r.eax >> 5) & 7) == 2)
+			return ((r.eax >> 14) & 0xfff) + 1;
+	}
+	return 1;
+}
+
 static void mainboard_final(void *unused)
 {
 	const unsigned int cpus = dev_count_cpu();
+	const unsigned int share = l2_sharing();
+	unsigned int dies;
 
 	/*
-	 * Award's late chipset hook (awardext.rom 0xa07d) writes the number
-	 * of initialized APs to MCHBAR 0x40[5:3], after CPU discovery.
+	 * The (G)MCH counts Stop-Grant cycles and forwards only the last one
+	 * to the ICH7 during Sx entry (ICH7 datasheet 5.13.2.2); MCHBAR
+	 * 0x40[5:3] holds that count minus one. The vendor BIOS writes the
+	 * number of APs there (awardext.rom 0xa07d), but with coreboot's
+	 * MSR_PKG_CST_CONFIG_CONTROL setup (bit 9 clear) each die issues a
+	 * single Stop-Grant. With the vendor count, S5 entry stalls after
+	 * STPCLK# and the board stays powered.
 	 */
-	if (!cpus || cpus > 8)
-		die("G31MX: CPU count %u does not fit the chipset topology field\n", cpus);
-	mchbar_clrsetbits8(0x40, 0x38, (cpus - 1) << 3);
+	if (!cpus || share > cpus || cpus % share)
+		die("G31MX: %u CPUs do not divide into dies of %u\n", cpus, share);
+	dies = cpus / share;
+	if (dies > 8)
+		die("G31MX: %u dies do not fit the Stop-Grant count\n", dies);
+	mchbar_clrsetbits8(0x40, 0x38, (dies - 1) << 3);
 }
 
 struct chip_operations mainboard_ops = {
