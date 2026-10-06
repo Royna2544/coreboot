@@ -1,4 +1,4 @@
-# First disk-boot payload attempt: G31 memory init with SeaBIOS and serial diagnostics.
+# G31MX with SeaBIOS on the fitted 8 MiB SPI flash.
 CONFIG_VENDOR_FOXCONN=y
 CONFIG_BOARD_FOXCONN_G31MX=y
 CONFIG_COMPILER_LLVM_CLANG=y
@@ -10,7 +10,8 @@ CONFIG_BOOTBLOCK_CONSOLE=y
 CONFIG_CONSOLE_POST=y
 CONFIG_DEFAULT_CONSOLE_LOGLEVEL_4=y
 
-CONFIG_ROM_SIZE=0x00080000
+# Native full-chip ROM; fatal port-0x80 checkpoints remain enabled.
+CONFIG_ROM_SIZE=0x00800000
 
 # Coreboot's pinned SeaBIOS release, with COM1 diagnostics and serial console.
 CONFIG_PAYLOAD_SEABIOS=y
