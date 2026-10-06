@@ -24,7 +24,7 @@ static int smi_enabled(void)
 		pch_log_state();
 
 	smi_en = read_pmbase32(SMI_EN);
-	if (smi_en & APMC_EN) {
+	if ((smi_en & (APMC_EN | GBL_SMI_EN)) == (APMC_EN | GBL_SMI_EN)) {
 		printk(BIOS_INFO, "SMI# handler already enabled?\n");
 		return 1;
 	}
