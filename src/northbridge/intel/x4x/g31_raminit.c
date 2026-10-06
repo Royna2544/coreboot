@@ -818,14 +818,18 @@ static void g31_channel_decode(struct sysinfo *s)
 	s->nmode = (c0 == c1) ? 2 : 1;
 }
 
+/* Fail closed at the host-map stage, before changing any map registers. */
+#define G31_POST_HOST_MAP_INVALID	0xe5
+
 /* Step POST 0x45: host memory map. */
 static bool g31_host_map(struct sysinfo *s)
 {
-	static const u8 gms_mib[8] = { 0, 1, 4, 8, 16, 0, 0, 0 };
-	static const u8 ggms_mib[4] = { 0, 1, 2, 0 };
+	/* Intel 317495-001 section 5.1.14: GMS[7:4], codes 0 through 9. */
+	static const u16 gms_mib[10] = { 0, 1, 4, 8, 16, 32, 48, 64, 128, 256 };
 	const u16 ggc = pci_read_config16(HOST_BRIDGE, D0F0_GGC);
-	const u32 gms = gms_mib[(ggc >> 4) & 7];
-	const u32 gtt = ggms_mib[(ggc >> 8) & 3];
+	const u32 gms_code = (ggc >> 4) & 0xf;
+	const u32 gtt_code = (ggc >> 8) & 3;
+	u32 gms, gtt;
 	/* 2 MiB, as native x4x: TSEG also holds the SMM stage cache. */
 	const u32 tseg = 2;
 	/*
@@ -837,7 +841,17 @@ static bool g31_host_map(struct sysinfo *s)
 	u32 top = s->channel_capacity[0] + s->channel_capacity[1];
 	u32 tolud = MIN(ceiling, top);
 	u32 touud, gbsm, bgsm, tsegbase;
+	/* Disabled remap window unless the calculation below enables it. */
+	u32 remapbase = 0x03ff, remaplimit = 0;
 	bool remap;
+
+	/* GGMS[9:8] codes 2/3 are reserved in the G31 field definition. */
+	if (gms_code >= ARRAY_SIZE(gms_mib) || gtt_code > 1 ||
+	    (!gms_code && !(ggc & (1 << 1))))
+		die_with_post_code(G31_POST_HOST_MAP_INVALID,
+				   "G31: unsupported graphics memory allocation\n");
+	gms = gms_mib[gms_code];
+	gtt = gtt_code;
 
 	remap = (top - tolud) > 0x40;
 	if (remap) {
@@ -848,19 +862,22 @@ static bool g31_host_map(struct sysinfo *s)
 		rbase = MAX(top, 0x1000);
 		rlimit = (MIN(top, 0x1000) - tolud) + rbase - 0x40;
 		touud = rlimit + 0x40;
-		pci_write_config16(HOST_BRIDGE, D0F0_REMAPBASE, rbase >> 6);
-		pci_write_config16(HOST_BRIDGE, D0F0_REMAPLIMIT, rlimit >> 6);
+		remapbase = rbase >> 6;
+		remaplimit = rlimit >> 6;
 	} else {
 		touud = top;
-		/* Leave the remap window disabled. */
-		pci_write_config16(HOST_BRIDGE, D0F0_REMAPBASE, 0x03ff);
-		pci_write_config16(HOST_BRIDGE, D0F0_REMAPLIMIT, 0);
 	}
 
+	/* Check aligned low DRAM before stolen-base subtraction or PCI writes. */
+	if (tolud < gms + gtt + tseg)
+		die_with_post_code(G31_POST_HOST_MAP_INVALID,
+				   "G31: graphics and TSEG exceed low DRAM\n");
 	gbsm = tolud - gms;
 	bgsm = gbsm - gtt;
 	tsegbase = bgsm - tseg;
 
+	pci_write_config16(HOST_BRIDGE, D0F0_REMAPBASE, remapbase);
+	pci_write_config16(HOST_BRIDGE, D0F0_REMAPLIMIT, remaplimit);
 	pci_write_config16(HOST_BRIDGE, D0F0_TOLUD, tolud << 4);
 	pci_write_config16(HOST_BRIDGE, D0F0_TOM, (s->channel_capacity[0]
 						  + s->channel_capacity[1]) >> 6);
