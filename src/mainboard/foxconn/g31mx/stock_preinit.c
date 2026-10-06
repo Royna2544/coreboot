@@ -154,14 +154,14 @@ static void vc_setup(void)
 	epbar_setbits32(0x20, 1 << 16);
 	epbar_setbits32(0x20, 1 << 16);
 	poll_clear(CONFIG_FIXED_EPBAR_MMIO_BASE + 0x24, 1 << 16);
-	epbar_setbits32(0x20, 1 << 31);
+	epbar_setbits32(0x20, 1U << 31);
 	poll_clear(CONFIG_FIXED_EPBAR_MMIO_BASE + 0x24, 1 << 17);
 
 	dmibar_clrbits32(0x14, 0xfe);
 	dmibar_clrsetbits32(0x04, 0x07, 0x01);
 	dmibar_setbits32(0x20, 1 << 24);
 	dmibar_clrsetbits32(0x20, 0xfe, 0x80);
-	dmibar_setbits32(0x20, 1 << 31);
+	dmibar_setbits32(0x20, 1U << 31);
 	poll_clear(CONFIG_FIXED_DMIBAR_MMIO_BASE + 0x24, 1 << 17);
 
 	mchbar_clrsetbits32(0x48, 0x300, 0x200);
@@ -186,7 +186,7 @@ static void vc_setup(void)
 	RCBA32(0x20) = (RCBA32(0x20) & ~0xfe) | 0x80;
 	RCBA32(0x14) &= ~0xfe;
 	RCBA32(0x1c) = (RCBA32(0x1c) & 0xff80ffff) | 0x120000;
-	RCBA32(0x20) |= 1 << 31;
+	RCBA32(0x20) |= 1U << 31;
 	poll_clear(CONFIG_FIXED_RCBA_MMIO_BASE + 0x18, 1 << 17);
 	poll_clear(CONFIG_FIXED_RCBA_MMIO_BASE + 0x24, 1 << 17);
 	RCBA32(0x20) = (RCBA32(0x20) & 0xfff1ffff) | 0x80000;
