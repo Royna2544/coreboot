@@ -10,6 +10,14 @@
 
 #define EHCI PCI_DEV(0, 0x1d, 7)
 
+void g31mx_smbios_init(struct device *dev);
+
+static void mainboard_enable(struct device *dev)
+{
+	if (CONFIG(GENERATE_SMBIOS_TABLES))
+		g31mx_smbios_init(dev);
+}
+
 /*
  * The vendor BIOS (awardext.rom table at cs:0x9a87) sets EHCI 0xfc bit 7 in
  * addition to the bits the common ICH7 EHCI init programs.
@@ -35,5 +43,6 @@ static void mainboard_final(void *unused)
 }
 
 struct chip_operations mainboard_ops = {
+	.enable_dev = mainboard_enable,
 	.final = mainboard_final,
 };

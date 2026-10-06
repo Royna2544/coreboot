@@ -10,3 +10,4 @@ ramstage-y += peg.c
 ramstage-y += power.c
 ramstage-y += cpu_smbios.c
 ramstage-y += memory_smbios.c
+ramstage-$(CONFIG_GENERATE_SMBIOS_TABLES) += smbios.c
