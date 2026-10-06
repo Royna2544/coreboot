@@ -127,6 +127,16 @@ config COREINFO_SECONDARY_PAYLOAD
 	  coreinfo can be loaded as a secondary payload under SeaBIOS, GRUB,
 	  or any other payload that can load additional payloads.
 
+config EDK2_SECONDARY_PAYLOAD
+	bool "Load edk2 as a secondary payload"
+	default n
+	depends on ARCH_X86
+	depends on !PAYLOAD_EDK2
+	select PAYLOAD_BUILD_EDK2
+	help
+	  edk2's UefiPayloadPkg can be loaded as a secondary payload under
+	  SeaBIOS or any other payload that can load additional payloads.
+
 config GRUB2_SECONDARY_PAYLOAD
 	bool "Load GRUB2 as a secondary payload"
 	default n
