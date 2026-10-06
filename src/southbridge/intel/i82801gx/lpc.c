@@ -150,9 +150,10 @@ static void i82801gx_power_options(struct device *dev)
 	 * 0 == S0 Full On
 	 * 1 == S5 Soft Off
 	 *
-	 * If the option is not existent (Laptops), use MAINBOARD_POWER_ON.
+	 * If the option is not existent, use the configured default.
 	 */
-	const unsigned int pwr_on = get_uint_option("power_on_after_fail", MAINBOARD_POWER_ON);
+	const unsigned int pwr_on = get_uint_option("power_on_after_fail",
+					  CONFIG_MAINBOARD_POWER_FAILURE_STATE);
 
 	reg8 = pci_read_config8(dev, GEN_PMCON_3);
 	reg8 &= 0xfe;
