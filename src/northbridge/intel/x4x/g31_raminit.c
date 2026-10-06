@@ -1085,6 +1085,19 @@ static void g31_award_chipset_preinit(void)
 	}
 }
 
+/*
+ * MCHBAR programming the Award boot block performs after the memory
+ * reference code (773F1P14 raw 0x75f94 and 0x7603c). The EPBAR writes at
+ * 0x75f94 only run with CLKCFG[2:0] <= 2 and are left out like on FSB 1333.
+ * Stock runtime has 0xfa4 bit 1 clear and 0xb68/0xb6c = 0xbd000000/0xbd.
+ */
+static void g31_award_chipset_postinit(void)
+{
+	mchbar_clrbits32(0xfa4, 1 << 1);
+	mchbar_write32(0xb68, 0xbd000000);
+	mchbar_write32(0xb6c, 0xbd);
+}
+
 void g31_sdram_initialize(int boot_path, const u8 *spd_map)
 {
 	static const struct g31_cold_ops ops = {
@@ -1257,6 +1270,7 @@ void g31_sdram_initialize(int boot_path, const u8 *spd_map)
 	}
 	remap = g31_host_map(&s);
 	g31_final_decode(&s, remap);
+	g31_award_chipset_postinit();
 
 	mchbar_setbits8(G31_CAL_CTRL, 0x82);
 	g31_mrc_mark_end(&service_ops, NULL);
