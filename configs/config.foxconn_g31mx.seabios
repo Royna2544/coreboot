@@ -1,0 +1,23 @@
+# First disk-boot payload attempt: G31 memory init with SeaBIOS and serial diagnostics.
+CONFIG_VENDOR_FOXCONN=y
+CONFIG_BOARD_FOXCONN_G31MX=y
+CONFIG_COMPILER_LLVM_CLANG=y
+CONFIG_ANY_TOOLCHAIN=y
+
+# Serial console from bootblock onwards, plus port-0x80 POST codes.
+CONFIG_CONSOLE_SERIAL=y
+CONFIG_BOOTBLOCK_CONSOLE=y
+CONFIG_CONSOLE_POST=y
+CONFIG_DEFAULT_CONSOLE_LOGLEVEL_7=y
+
+# Verbose raminit logging and a read/write verification of the array.
+CONFIG_DEBUG_RAM_SETUP=y
+CONFIG_ROM_SIZE=0x00080000
+
+# Coreboot's pinned SeaBIOS release, with COM1 diagnostics and serial console.
+CONFIG_PAYLOAD_SEABIOS=y
+CONFIG_SEABIOS_STABLE=y
+CONFIG_SEABIOS_DEBUG_LEVEL=3
+CONFIG_SEABIOS_ADD_SERCON_PORT_FILE=y
+CONFIG_SEABIOS_SERCON_PORT_ADDR=0x3f8
+# CONFIG_SEABIOS_THREAD_OPTIONROMS is not set

@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+chip northbridge/intel/x4x
+	device cpu_cluster 0 on ops x4x_cpu_bus_ops end
+	device domain 0 on
+		ops x4x_pci_domain_ops
+		device pci 0.0 on end		# G31 8086:29c0
+		device pci 1.0 on end		# PEG: discrete graphics
+		device pci 2.0 off end		# Do not enable IGD
+		device pci 2.1 off end
+		chip southbridge/intel/i82801gx
+			# Live LPC 0x60/0x68; all PIC routes are masked.
+			# RCBA/APIC routing is not yet qualified.
+			register "pirqa_routing" = "0x8a"
+			register "pirqb_routing" = "0x8b"
+			register "pirqc_routing" = "0x85"
+			register "pirqd_routing" = "0x8f"
+			register "pirqe_routing" = "0x80"
+			register "pirqf_routing" = "0x80"
+			register "pirqg_routing" = "0x80"
+			register "pirqh_routing" = "0x83"
+
+			register "ide_enable_primary" = "true"
+			register "ide_enable_secondary" = "false"
+			register "sata_mode" = "SATA_MODE_IDE_PLAIN"
+
+			device pci 1b.0 on end		# HDA, ALC662 at codec address 2
+			device pci 1c.0 on end		# PCIe port 1
+			device pci 1c.1 on		# PCIe port 2: RTL8168
+				device pci 00.0 on end
+			end
+			device pci 1c.2 off end
+			device pci 1c.3 off end
+			device pci 1d.0 on end		# UHCI 1
+			device pci 1d.1 on end		# UHCI 2
+			device pci 1d.2 on end		# UHCI 3
+			device pci 1d.3 on end		# UHCI 4
+			device pci 1d.7 on end		# EHCI
+			device pci 1e.0 on end		# PCI bridge
+			device pci 1e.2 off end		# AC'97 audio
+			device pci 1e.3 off end		# AC'97 modem
+			device pci 1f.0 on		# ICH7 LPC 8086:27b8
+				chip superio/ite/it8718f
+					device pnp 2e.0 off end	# Floppy
+					device pnp 2e.1 on	# COM1
+						io 0x60 = 0x3f8
+						irq 0x70 = 4
+					end
+					device pnp 2e.2 off end	# COM2
+					device pnp 2e.3 off end	# Parallel
+					device pnp 2e.4 off end	# Fan/thermal policy unqualified
+					device pnp 2e.5 on	# PS/2 keyboard
+						io 0x60 = 0x60
+						io 0x62 = 0x64
+						irq 0x70 = 1
+					end
+					device pnp 2e.6 on	# PS/2 mouse
+						irq 0x70 = 12
+					end
+				end
+			end
+			device pci 1f.1 on end		# PATA
+			device pci 1f.2 on end		# SATA in IDE mode
+			device pci 1f.3 on end		# SMBus
+		end
+	end
+end

@@ -1,0 +1,4 @@
+## SPDX-License-Identifier: GPL-2.0-only
+
+config BOARD_FOXCONN_G31MX
+	bool "G31MX"

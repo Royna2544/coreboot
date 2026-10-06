@@ -1,0 +1,19 @@
+# First boot attempt: G31 memory init with a payload and verbose RAM logging.
+CONFIG_VENDOR_FOXCONN=y
+CONFIG_BOARD_FOXCONN_G31MX=y
+CONFIG_COMPILER_LLVM_CLANG=y
+CONFIG_ANY_TOOLCHAIN=y
+
+# Serial console from the bootblock onwards, plus port-0x80 POST codes.
+CONFIG_CONSOLE_SERIAL=y
+CONFIG_BOOTBLOCK_CONSOLE=y
+CONFIG_CONSOLE_POST=y
+CONFIG_DEFAULT_CONSOLE_LOGLEVEL_7=y
+
+# Verbose raminit logging and a read/write verification of the array.
+CONFIG_DEBUG_RAM_SETUP=y
+
+# coreinfo: in-tree, needs no network, prints over serial and shows the
+# memory map that the address decode produced.
+CONFIG_PAYLOAD_ELF=y
+CONFIG_PAYLOAD_FILE="payloads/coreinfo/build/coreinfo.elf"
