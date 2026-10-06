@@ -76,6 +76,12 @@ static void lpc_table(void)
 	}
 	/* The vendor table leaves COM1 undecoded; the console needs it. */
 	pci_or_config16(LPC, LPC_EN, COMA_LPC_EN);
+	/*
+	 * The vendor table decodes only the top 1 MiB (FWH_DEC_EN1 0xd9 = 0xc0)
+	 * for its 512 KiB flash. Keep the whole ROM decoded: bits 15:8 select
+	 * 512 KiB blocks downwards from 4 GiB, each with an alias 4 MiB lower.
+	 */
+	pci_or_config8(LPC, 0xd9, (0xff << (8 - MIN(CONFIG_ROM_SIZE / (512 * KiB), 8))) & 0xff);
 }
 
 /* 0xf6369: GEN_PMCON_3. */
