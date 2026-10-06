@@ -8,3 +8,4 @@ ramstage-y += cstates.c
 ramstage-y += mainboard.c
 ramstage-y += peg.c
 ramstage-y += power.c
+ramstage-y += cpu_smbios.c
