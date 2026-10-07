@@ -13,6 +13,7 @@ config BOARD_SPECIFIC_OPTIONS
 	select DRIVERS_UART_8250IO
 	select FIXED_UART_FOR_CONSOLE
 	select POST_IO
+	select IOAPIC_USE_PRESET_ID
 
 config MAINBOARD_DIR
 	default "foxconn/g31mx"
