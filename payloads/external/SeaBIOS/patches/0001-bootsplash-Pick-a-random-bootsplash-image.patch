@@ -1,0 +1,95 @@
+From ce49822230041059517c35145d078d5dc3864b7a Mon Sep 17 00:00:00 2001
+From: Royna2544 <whiteshell2544@naver.com>
+Date: Wed, 7 Oct 2026 15:19:33 +0900
+Subject: [PATCH] bootsplash: Pick a random bootsplash image
+
+Show one of the "bootsplash*.jpg" and "bootsplash*.bmp" files from the
+ROM, chosen with the TSC, so that several images can be rotated across
+boots. With a single bootsplash.jpg or bootsplash.bmp the behavior is
+unchanged.
+---
+ src/bootsplash.c | 54 +++++++++++++++++++++++++++++++++++++++++-------
+ 1 file changed, 47 insertions(+), 7 deletions(-)
+
+diff --git a/src/bootsplash.c b/src/bootsplash.c
+index 538b316d..838bc4d8 100644
+--- a/src/bootsplash.c
++++ b/src/bootsplash.c
+@@ -15,6 +15,7 @@
+ #include "std/vbe.h" // struct vbe_info
+ #include "string.h" // memset
+ #include "util.h" // enable_bootsplash
++#include "x86.h" // rdtscll
+ 
+ 
+ /****************************************************************
+@@ -94,6 +95,46 @@ find_videomode(struct vbe_info *vesa_info, struct vbe_mode_info *mode_info
+ 
+ static int BootsplashActive;
+ 
++// Return the bootsplash image type for a romfile name: 0 for a jpeg,
++// 1 for a bmp, -1 if the name is not a bootsplash image.
++static int
++bootsplash_type(const char *name)
++{
++    int len = strlen(name);
++    if (len < 4)
++        return -1;
++    if (memcmp(name + len - 4, ".jpg", 4) == 0)
++        return 0;
++    if (memcmp(name + len - 4, ".bmp", 4) == 0)
++        return 1;
++    return -1;
++}
++
++// Pick one of the "bootsplash*.jpg" and "bootsplash*.bmp" files at
++// random, so that several images can be shown in turn across boots.
++static struct romfile_s *
++find_bootsplash(u8 *type)
++{
++    struct romfile_s *file = NULL;
++    u32 count = 0;
++    while ((file = romfile_findprefix("bootsplash", file)))
++        if (bootsplash_type(file->name) >= 0)
++            count++;
++    if (!count)
++        return NULL;
++
++    u32 pick = (u32)rdtscll() % count;
++    while ((file = romfile_findprefix("bootsplash", file))) {
++        if (bootsplash_type(file->name) < 0)
++            continue;
++        if (!pick--)
++            break;
++    }
++    *type = bootsplash_type(file->name);
++    dprintf(3, "Bootsplash: %s (1 of %d)\n", file->name, count);
++    return file;
++}
++
+ void
+ enable_bootsplash(void)
+ {
+@@ -103,13 +144,12 @@ enable_bootsplash(void)
+     dprintf(3, "Checking for bootsplash\n");
+     u8 type = 0; /* 0 means jpg, 1 means bmp, default is 0=jpg */
+     int filesize;
+-    u8 *filedata = romfile_loadfile("bootsplash.jpg", &filesize);
+-    if (!filedata) {
+-        filedata = romfile_loadfile("bootsplash.bmp", &filesize);
+-        if (!filedata)
+-            return;
+-        type = 1;
+-    }
++    struct romfile_s *file = find_bootsplash(&type);
++    if (!file)
++        return;
++    u8 *filedata = romfile_loadfile(file->name, &filesize);
++    if (!filedata)
++        return;
+     dprintf(3, "start showing bootsplash\n");
+ 
+     u8 *picture = NULL; /* data buff used to be flushed to the video buf */
+-- 
+2.56.0
+

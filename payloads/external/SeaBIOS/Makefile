@@ -35,6 +35,10 @@ endif
 checkout: fetch
 	echo "    Checking out SeaBIOS revision $(TAG-y)"
 	cd seabios; git checkout master; git branch -D coreboot 2>/dev/null; git checkout -b coreboot $(TAG-y)
+	for patch in $(sort $(wildcard $(CURDIR)/patches/*.patch)); do \
+		echo "    Applying $$(basename $$patch)"; \
+		(cd seabios; git -c commit.gpgsign=false am -q --committer-date-is-author-date $$patch) || exit 1; \
+	done
 
 config: checkout
 	echo "    CONFIG     SeaBIOS $(TAG-y)"
