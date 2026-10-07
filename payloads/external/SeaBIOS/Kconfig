@@ -72,6 +72,15 @@ config SEABIOS_FLOPPY0_TYPE
 	  1 = 360 KiB 5.25", 2 = 1.2 MiB 5.25", 3 = 720 KiB 3.5",
 	  4 = 1.44 MiB 3.5", 5 = 2.88 MiB 3.5".
 
+config SEABIOS_BOOTSPLASH_FILES
+	string "Additional bootsplash images"
+	default ""
+	depends on BOOTSPLASH_CONVERT
+	help
+	  Space-separated list of images that are converted like
+	  BOOTSPLASH_FILE and added as bootsplash-<name>.jpg. SeaBIOS shows
+	  one of the bootsplash images, picked at random on each boot.
+
 config SEABIOS_THREAD_OPTIONROMS
 	prompt "Hardware init during option ROM execution"
 	default n
