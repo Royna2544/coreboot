@@ -3,10 +3,14 @@
 #define __SIMPLE_DEVICE__
 
 #include <arch/cpuid.h>
+#include <arch/io.h>
 #include <arch/ioapic.h>
 #include <bootstate.h>
 #include <console/console.h>
+#include <delay.h>
 #include <device/device.h>
+#include <device/mmio.h>
+#include <device/pci_def.h>
 #include <device/pci_ops.h>
 #include <northbridge/intel/x4x/x4x.h>
 
@@ -36,6 +40,56 @@ static void g31mx_usb_final(void *unused)
 {
 	pci_or_config8(EHCI, 0xfc, 1 << 7);
 }
+
+#define EHCI_USBCMD		0x00
+#define  EHCI_USBCMD_RS		(1 << 0)
+#define  EHCI_USBCMD_HCRESET	(1 << 1)
+#define EHCI_USBSTS		0x04
+#define  EHCI_USBSTS_HCHALTED	(1 << 12)
+#define UHCI_USBCMD		0x00
+#define  UHCI_USBCMD_GRESET	(1 << 2)
+
+/*
+ * The USB ports and attached devices keep their state across a warm reset
+ * (the ICH7 USB port logic is in the resume well). A device left configured
+ * by the previous boot then does not answer the payload's port reset. The
+ * vendor BIOS drives reset on all UHCI ports itself (awardeyt.rom 0x8d48).
+ * Reset EHCI, which routes every port back to its UHCI companion, then
+ * drive a USB global reset on all UHCI controllers for TDRSTR (50 ms).
+ */
+static void g31mx_usb_bus_reset(void *unused)
+{
+	static const pci_devfn_t uhci[] = {
+		PCI_DEV(0, 0x1d, 0), PCI_DEV(0, 0x1d, 1),
+		PCI_DEV(0, 0x1d, 2), PCI_DEV(0, 0x1d, 3),
+	};
+	const uintptr_t ehci = pci_read_config32(EHCI, PCI_BASE_ADDRESS_0) & ~0xf;
+	uintptr_t op;
+	unsigned int i;
+	int t;
+
+	if (ehci && (pci_read_config16(EHCI, PCI_COMMAND) & PCI_COMMAND_MEMORY)) {
+		op = ehci + read8p(ehci);
+		write32p(op + EHCI_USBCMD, read32p(op + EHCI_USBCMD) & ~EHCI_USBCMD_RS);
+		for (t = 0; t < 20 && !(read32p(op + EHCI_USBSTS) & EHCI_USBSTS_HCHALTED); t++)
+			udelay(100);
+		write32p(op + EHCI_USBCMD, EHCI_USBCMD_HCRESET);
+		for (t = 0; t < 250 && (read32p(op + EHCI_USBCMD) & EHCI_USBCMD_HCRESET); t++)
+			mdelay(1);
+	}
+
+	for (i = 0; i < ARRAY_SIZE(uhci); i++)
+		if (pci_read_config16(uhci[i], PCI_COMMAND) & PCI_COMMAND_IO)
+			outw(UHCI_USBCMD_GRESET, (pci_read_config16(uhci[i],
+				PCI_BASE_ADDRESS_4) & ~0x1f) + UHCI_USBCMD);
+	mdelay(50);
+	for (i = 0; i < ARRAY_SIZE(uhci); i++)
+		if (pci_read_config16(uhci[i], PCI_COMMAND) & PCI_COMMAND_IO)
+			outw(0, (pci_read_config16(uhci[i], PCI_BASE_ADDRESS_4) & ~0x1f) +
+			     UHCI_USBCMD);
+}
+
+BOOT_STATE_INIT_ENTRY(BS_DEV_INIT, BS_ON_EXIT, g31mx_usb_bus_reset, NULL);
 
 BOOT_STATE_INIT_ENTRY(BS_DEV_INIT, BS_ON_EXIT, g31mx_usb_final, NULL);
 
