@@ -132,6 +132,15 @@ $(call add_intermediate, seabios_usb_time_sigatt, $(CBFSTOOL))
 endif
 endif
 
+# Additional bootsplash images; SeaBIOS picks one of them at random.
+define seabios_add_bootsplash
+cbfs-files-y += bootsplash-$(basename $(notdir $(1))).jpg
+bootsplash-$(basename $(notdir $(1))).jpg-file := $(1):jpg420
+bootsplash-$(basename $(notdir $(1))).jpg-type := bootsplash
+endef
+$(foreach f,$(call strip_quotes,$(CONFIG_SEABIOS_BOOTSPLASH_FILES)), \
+	$(eval $(call seabios_add_bootsplash,$(f))))
+
 ifneq ($(CONFIG_SEABIOS_FLOPPY0_TYPE),)
 ifneq ($(CONFIG_SEABIOS_FLOPPY0_TYPE),0)
 $(call add_intermediate, seabios_floppy0, $(CBFSTOOL))
