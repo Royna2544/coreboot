@@ -41,7 +41,11 @@ chip northbridge/intel/x4x
 			device pci 1e.3 off end		# AC'97 modem
 			device pci 1f.0 on		# ICH7 LPC 8086:27b8
 				chip superio/ite/it8718f
-					device pnp 2e.0 off end	# Floppy
+					device pnp 2e.0 on	# Floppy
+						io 0x60 = 0x3f0
+						irq 0x70 = 6
+						drq 0x74 = 2
+					end
 					device pnp 2e.1 on	# COM1
 						io 0x60 = 0x3f8
 						irq 0x70 = 4
