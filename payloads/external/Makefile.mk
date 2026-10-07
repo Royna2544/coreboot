@@ -132,6 +132,15 @@ $(call add_intermediate, seabios_usb_time_sigatt, $(CBFSTOOL))
 endif
 endif
 
+ifneq ($(CONFIG_SEABIOS_FLOPPY0_TYPE),)
+ifneq ($(CONFIG_SEABIOS_FLOPPY0_TYPE),0)
+$(call add_intermediate, seabios_floppy0, $(CBFSTOOL))
+	@printf "    SeaBIOS    Add floppy drive A: type $(CONFIG_SEABIOS_FLOPPY0_TYPE)\n"
+	$(if $(CONFIG_UPDATE_IMAGE),-$(CBFSTOOL) $< remove -n etc/floppy0 2>/dev/null)
+	$(CBFSTOOL) $< add-int -i $(CONFIG_SEABIOS_FLOPPY0_TYPE) -n etc/floppy0
+endif
+endif
+
 ifeq ($(CONFIG_SEABIOS_ADD_SERCON_PORT_FILE),y)
 $(call add_intermediate, seabios_sercon, $(CBFSTOOL))
 	@printf "    SeaBIOS    Add sercon-port file\n"

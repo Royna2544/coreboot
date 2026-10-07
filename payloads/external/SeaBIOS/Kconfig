@@ -62,6 +62,16 @@ config SEABIOS_USB_TIME_SIGATT
 	  its UHCI/OHCI companion controllers only after a port reset, which can
 	  take longer than that, so such devices can be missed.
 
+config SEABIOS_FLOPPY0_TYPE
+	prompt "Floppy drive A: type"
+	default 0
+	int
+	help
+	  CMOS-style type of the first floppy drive that SeaBIOS reports
+	  (etc/floppy0). 0 adds no file and SeaBIOS uses no drive.
+	  1 = 360 KiB 5.25", 2 = 1.2 MiB 5.25", 3 = 720 KiB 3.5",
+	  4 = 1.44 MiB 3.5", 5 = 2.88 MiB 3.5".
+
 config SEABIOS_THREAD_OPTIONROMS
 	prompt "Hardware init during option ROM execution"
 	default n
