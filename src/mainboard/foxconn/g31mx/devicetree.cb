@@ -9,16 +9,15 @@ chip northbridge/intel/x4x
 		device pci 2.0 off end		# Do not enable IGD
 		device pci 2.1 off end
 		chip southbridge/intel/i82801gx
-			# Live LPC 0x60/0x68; all PIC routes are masked.
-			# RCBA/APIC routing is not yet qualified.
-			register "pirqa_routing" = "0x8a"
-			register "pirqb_routing" = "0x8b"
-			register "pirqc_routing" = "0x85"
-			register "pirqd_routing" = "0x8f"
+			# Stock IRQ choices; PIRQE-G are not used by any device.
+			register "pirqa_routing" = "0x0a"
+			register "pirqb_routing" = "0x0b"
+			register "pirqc_routing" = "0x05"
+			register "pirqd_routing" = "0x0f"
 			register "pirqe_routing" = "0x80"
 			register "pirqf_routing" = "0x80"
 			register "pirqg_routing" = "0x80"
-			register "pirqh_routing" = "0x83"
+			register "pirqh_routing" = "0x03"
 
 			register "ide_enable_primary" = "true"
 			register "ide_enable_secondary" = "false"
