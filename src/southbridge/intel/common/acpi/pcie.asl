@@ -50,53 +50,40 @@ Name (IQDP, Package() {
 	Package() { 0x0000ffff, 2, \_SB.PCI0.LPCB.LNKB, 0 },
 	Package() { 0x0000ffff, 3, \_SB.PCI0.LPCB.LNKC, 0 } })
 
+/*
+ * Plain If/LEqual instead of Switch/ToInteger, which AML interpreters
+ * older than ACPI 2.0 (Windows XP) do not support.
+ */
 Method (IRQM, 1, Serialized) {
-
-	Switch (ToInteger (Arg0)) {
-		/* PCIe Root Port 1 and 5 */
-		Case (Package() { 1, 5 }) {
-			If (PICM) {
-				Return (IQAA)
-			} Else {
-				Return (IQAP)
-			}
+	/* PCIe Root Port 1 and 5 */
+	If ((Arg0 == 1) || (Arg0 == 5)) {
+		If (PICM) {
+			Return (IQAA)
 		}
-
-		/* PCIe Root Port 2 and 6 */
-		Case (Package() { 2, 6 }) {
-			If (PICM) {
-				Return (IQBA)
-			} Else {
-				Return (IQBP)
-			}
-		}
-
-		/* PCIe Root Port 3 and 7 */
-		Case (Package() { 3, 7 }) {
-			If (PICM) {
-				Return (IQCA)
-			} Else {
-				Return (IQCP)
-			}
-		}
-
-		/* PCIe Root Port 4 and 8 */
-		Case (Package() { 4, 8 }) {
-			If (PICM) {
-				Return (IQDA)
-			} Else {
-				Return (IQDP)
-			}
-		}
-
-		Default {
-			If (PICM) {
-				Return (IQDA)
-			} Else {
-				Return (IQDP)
-			}
-		}
+		Return (IQAP)
 	}
+
+	/* PCIe Root Port 2 and 6 */
+	If ((Arg0 == 2) || (Arg0 == 6)) {
+		If (PICM) {
+			Return (IQBA)
+		}
+		Return (IQBP)
+	}
+
+	/* PCIe Root Port 3 and 7 */
+	If ((Arg0 == 3) || (Arg0 == 7)) {
+		If (PICM) {
+			Return (IQCA)
+		}
+		Return (IQCP)
+	}
+
+	/* PCIe Root Port 4 and 8, and any other */
+	If (PICM) {
+		Return (IQDA)
+	}
+	Return (IQDP)
 }
 
 Device (RP01)
