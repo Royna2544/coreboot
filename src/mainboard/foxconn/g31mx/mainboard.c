@@ -3,6 +3,7 @@
 #define __SIMPLE_DEVICE__
 
 #include <arch/cpuid.h>
+#include <arch/ioapic.h>
 #include <bootstate.h>
 #include <console/console.h>
 #include <device/device.h>
@@ -15,6 +16,14 @@ void g31mx_smbios_init(struct device *dev);
 
 static void mainboard_enable(struct device *dev)
 {
+	/*
+	 * Give the ICH7 I/O APIC an ID above the CPUs' local APIC IDs
+	 * (0 .. MAX_CPUS - 1), as the vendor MADT does (ID 4). The common
+	 * GSI0 setup would program 0, which the boot CPU already uses.
+	 * IOAPIC_USE_PRESET_ID keeps this ID.
+	 */
+	ioapic_setup_gsi0_id(IO_APIC_ADDR, CONFIG_MAX_CPUS);
+
 	if (CONFIG(GENERATE_SMBIOS_TABLES))
 		g31mx_smbios_init(dev);
 }
