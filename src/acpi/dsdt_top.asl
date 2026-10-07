@@ -67,6 +67,17 @@ Scope(\_SB) {
 	Device (PERC)	// PCI ECAM Resource Consumption
 	{
 		Name (_HID, EisaId("PNP0C02"))
+#if CONFIG_ECAM_MMCONF_BASE_ADDRESS + CONFIG_ECAM_MMCONF_LENGTH <= 0x100000000
+		/*
+		 * A static 32-bit descriptor below 4 GiB, so that AML interpreters
+		 * without CreateQWordField (Windows XP) can still use it.
+		 */
+		Name (_CRS, ResourceTemplate ()
+		{
+			Memory32Fixed (ReadWrite, CONFIG_ECAM_MMCONF_BASE_ADDRESS,
+				CONFIG_ECAM_MMCONF_LENGTH)
+		})
+#else
 		Name (RBUF, ResourceTemplate ()
 		{
 			QWordMemory (ResourceConsumer, PosDecode, MinFixed, MaxFixed,
@@ -88,6 +99,7 @@ Scope(\_SB) {
 			LEN1 = CONFIG_ECAM_MMCONF_LENGTH
 			Return (RBUF)
 		}
+#endif
 	}
 }
 #endif
