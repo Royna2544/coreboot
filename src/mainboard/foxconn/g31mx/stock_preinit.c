@@ -10,7 +10,10 @@
  * 0x400 and SMBus base 0x500 are translated to the Coreboot bases.
  */
 
+#define __SIMPLE_DEVICE__
+
 #include <arch/io.h>
+#include <console/console.h>
 #include <delay.h>
 #include <device/mmio.h>
 #include <device/pci_def.h>
@@ -28,6 +31,11 @@
 #define SIO_GPIO_BASE	0x800
 #define SMBUS		CONFIG_FIXED_SMBUS_IO_BASE
 
+#define FWH_ROM_DECODE_EN \
+	((0xffU << (8 - MIN(CONFIG_ROM_SIZE / (512 * KiB), 8))) & 0xff)
+
+void g31mx_igfx_vc_check(void);
+
 static u16 pmbase(void)
 {
 	return pci_read_config16(LPC, PMBASE) & 0xff80;
@@ -38,12 +46,201 @@ static void ecam_rmw32(uintptr_t addr, u32 and, u32 or)
 	write32p(addr, (read32p(addr) & and) | or);
 }
 
-static void poll_clear(uintptr_t addr, u32 mask)
+static void poll_clear(uintptr_t addr, u32 mask, u8 failure_post)
 {
 	int i;
 
-	for (i = 0; i < 100 && (read32p(addr) & mask); i++)
-		;
+	for (i = 0; i < 100; i++) {
+		if (!(read32p(addr) & mask))
+			return;
+	}
+	if (CONFIG(G31MX_USE_IGFX) && failure_post)
+		die_with_post_code(failure_post, "G31MX: VC timeout at %lx, mask %x\n",
+				   (unsigned long)addr, mask);
+}
+
+#define VC_ENABLE	(1U << 31)
+#define VC_ID_MASK	(7U << 24)
+#define VC_PAS_MASK	(7U << 17)
+#define VC_STATE_MASK	(VC_ENABLE | VC_ID_MASK | VC_PAS_MASK | 0xff)
+
+static void poll_vc1_complete(uintptr_t addr, u8 ats_post, u8 np_post)
+{
+	const u32 ats = 1U << 16;
+	const u32 np = 1U << 17;
+	u32 status = 0;
+	unsigned int i;
+
+	for (i = 0; i < 100; i++) {
+		status = read32p(addr);
+		if (!(status & (ats | np)))
+			return;
+	}
+	/* Attribute the timeout from the last sample, without another status read. */
+	die_with_post_code(status & ats ? ats_post : np_post,
+			   "G31MX: VC timeout at %lx, status %x\n",
+			   (unsigned long)addr, status);
+}
+
+static const u32 ep_arb[8] = {
+	0x01000001, 0x00040000, 0x00001000, 0x00000040,
+	0x01000001, 0x00040000, 0x00001000, 0x00000040,
+};
+static const u8 rcba_arb[64] = {
+	0x0f, 0, 0, 0, 0, 0, 0x0f, 0, 0, 0, 0, 0, 0xf0, 0, 0, 0,
+	0, 0, 0, 0x0f, 0, 0, 0, 0, 0, 0xf0, 0, 0, 0, 0, 0, 0,
+	0x0f, 0, 0, 0, 0, 0, 0x0f, 0, 0, 0, 0, 0, 0xf0, 0, 0, 0,
+	0, 0, 0, 0x0f, 0, 0, 0, 0, 0, 0xf0, 0, 0, 0, 0, 0, 0,
+};
+
+static u32 rcba_arb_word(unsigned int i)
+{
+	return (u32)rcba_arb[i] | ((u32)rcba_arb[i + 1] << 8) |
+		((u32)rcba_arb[i + 2] << 16) | ((u32)rcba_arb[i + 3] << 24);
+}
+
+static bool vc_table_matches(uintptr_t base)
+{
+	unsigned int i;
+
+	if (base == CONFIG_FIXED_EPBAR_MMIO_BASE) {
+		for (i = 0; i < ARRAY_SIZE(ep_arb); i++) {
+			if (read32p(base + 0x100 + 4 * i) != ep_arb[i])
+				return false;
+		}
+	} else {
+		for (i = 0; i < ARRAY_SIZE(rcba_arb); i += 4) {
+			if (read32p(base + 0x30 + i) != rcba_arb_word(i))
+				return false;
+		}
+	}
+	return true;
+}
+
+/* Check an enabled resource, never silently reassign its ID or TC map. */
+static bool vc_state_matches(uintptr_t base, unsigned int pas)
+{
+	return (read32p(base + 0x14) & VC_STATE_MASK) == (VC_ENABLE | 1) &&
+	       (read32p(base + 0x20) & VC_STATE_MASK) ==
+		(VC_ENABLE | (1U << 24) | (pas << 17) | 0x80);
+}
+
+static void vc_check_enabled(uintptr_t base, unsigned int pas)
+{
+	if (!vc_state_matches(base, pas))
+		die_with_post_code(0xd5, "G31MX: VC enable did not latch\n");
+}
+
+static void vc_preflight(void)
+{
+	const uintptr_t ep = CONFIG_FIXED_EPBAR_MMIO_BASE;
+	const uintptr_t north = CONFIG_FIXED_DMIBAR_MMIO_BASE;
+	const uintptr_t south = CONFIG_FIXED_RCBA_MMIO_BASE;
+	u32 ecam = pci_read_config32(HOST_BRIDGE, D0F0_PCIEXBAR_LO);
+
+	/* The OEM script uses these fixed windows, not BAR-relative discovery. */
+	if (pci_read_config32(HOST_BRIDGE, 0) != 0x29c08086 ||
+	    pci_read_config32(LPC, 0) != 0x27b88086 ||
+	    pci_read_config32(HOST_BRIDGE, D0F0_EPBAR_LO) != (ep | 1) ||
+	    pci_read_config32(HOST_BRIDGE, D0F0_EPBAR_HI) ||
+	    pci_read_config32(HOST_BRIDGE, D0F0_DMIBAR_LO) != (north | 1) ||
+	    pci_read_config32(HOST_BRIDGE, D0F0_DMIBAR_HI) ||
+	    pci_read_config32(HOST_BRIDGE, D0F0_MCHBAR_LO) !=
+		(CONFIG_FIXED_MCHBAR_MMIO_BASE | 1) ||
+	    pci_read_config32(HOST_BRIDGE, D0F0_MCHBAR_HI) ||
+	    pci_read_config32(LPC, RCBA) != (south | 1) ||
+	    !(ecam & 1) || (ecam & ~7U) != CONFIG_ECAM_MMCONF_BASE_ADDRESS ||
+	    (ecam & 6) == 6 || pci_read_config32(HOST_BRIDGE, D0F0_PCIEXBAR_HI))
+		die_with_post_code(0xca, "G31MX: VC identity/BAR mismatch\n");
+
+	/* G31 317495-001 pp.215/218; ICH7 307013-003 pp.265/268.
+	 * EP is a separate OEM/runtime-qualified resource, not north DMI.
+	 * Match the supported fixed table layouts before the OEM writes them.
+	 */
+	if ((read32p(ep) & 0xfffff) != 0x10002 ||
+	    (read32p(north) & 0xfffff) != 0x10002 ||
+	    (read32p(south) & 0xfffff) != 0x10002 ||
+	    (read32p(ep + 4) & 0xc77) != 0x401 ||
+	    (read32p(north + 4) & 0x77) != 1 ||
+	    (read32p(south + 4) & 0xc77) != 0x801 ||
+	    (read32p(ep + 0x10) & 0xff) != 1 ||
+	    (read32p(north + 0x10) & 0xff) != 1 ||
+	    (read32p(south + 0x10) & 0xff) != 1 ||
+	    (read32p(ep + 0x1c) & 0xff0000ff) != 0x10000010 ||
+	    (read32p(north + 0x1c) & 0xff) != 1 ||
+	    (read32p(south + 0x1c) & 0xff0000ff) != 0x03000010)
+		die_with_post_code(0xcb, "G31MX: VC capability mismatch\n");
+
+	if ((read32p(ep + 0x14) & (VC_ENABLE | VC_ID_MASK | VC_PAS_MASK | 1)) !=
+		(VC_ENABLE | 1) ||
+	    (read32p(north + 0x14) & (VC_ENABLE | VC_ID_MASK | VC_PAS_MASK | 1)) !=
+		(VC_ENABLE | 1) ||
+	    (read32p(south + 0x14) & (VC_ENABLE | VC_ID_MASK | VC_PAS_MASK | 1)) !=
+		(VC_ENABLE | 1) ||
+	    (read32p(ep + 0x20) & 1) || (read32p(north + 0x20) & 1) ||
+	    (read32p(south + 0x20) & 1) ||
+	    /*
+	     * The G31 cold path resets through CF9 during romstage: that resets
+	     * the ICH7 RCBA VC registers but keeps the MCH EP/DMI ones, so north
+	     * VC1 can already be enabled while the south end is back at reset.
+	     * vc_setup() enables the south end again; the reverse is incoherent.
+	     */
+	    ((read32p(south + 0x20) & VC_ENABLE) && !(read32p(north + 0x20) & VC_ENABLE)) ||
+	    ((read32p(ep + 0x20) & VC_ENABLE) &&
+		(!vc_state_matches(ep, 4) || !vc_table_matches(ep))) ||
+	    ((read32p(north + 0x20) & VC_ENABLE) && !vc_state_matches(north, 0)) ||
+	    ((read32p(south + 0x20) & VC_ENABLE) &&
+		(!vc_state_matches(south, 4) || !vc_table_matches(south) ||
+		 (read32p(south + 0x1c) & 0x7f0000) != 0x120000)) ||
+	    ((read32p(north + 0x2c) & VC_ENABLE) &&
+		(read32p(north + 0x2c) & VC_STATE_MASK) != 0x86000040))
+		die_with_post_code(0xcc, "G31MX: incoherent retained VC state\n");
+}
+
+static void vc_select_inactive(uintptr_t base, unsigned int pas)
+{
+	u32 v = read32p(base + 0x20);
+
+	if (v & VC_ENABLE)
+		return;
+	v = (v & ~(VC_ID_MASK | VC_PAS_MASK)) | (1U << 24) | (pas << 17);
+	write32p(base + 0x20, v);
+	if ((read32p(base + 0x20) & (VC_ID_MASK | VC_PAS_MASK | 0xff)) !=
+	    ((1U << 24) | (pas << 17) | 0x80) ||
+	    (read32p(base + 0x14) & VC_STATE_MASK) != (VC_ENABLE | 1) ||
+	    (base == CONFIG_FIXED_RCBA_MMIO_BASE &&
+	     (read32p(base + 0x1c) & 0x7f0000) != 0x120000))
+		die_with_post_code(0xd5, "G31MX: VC selection did not latch\n");
+}
+
+static void vc_final_check(void)
+{
+	const uintptr_t ep = CONFIG_FIXED_EPBAR_MMIO_BASE;
+	const uintptr_t north = CONFIG_FIXED_DMIBAR_MMIO_BASE;
+	const uintptr_t south = CONFIG_FIXED_RCBA_MMIO_BASE;
+
+	/* Original early polls precede peer enable; decide only after both ends exist. */
+	poll_vc1_complete(ep + 0x24, 0xcd, 0xce);
+	poll_clear(north + 0x18, 1U << 17, 0xd4);
+	poll_clear(north + 0x24, 1U << 17, 0xcf);
+	poll_clear(north + 0x30, 1U << 17, 0xd0);
+	poll_clear(south + 0x18, 1U << 17, 0xd1);
+	poll_vc1_complete(south + 0x24, 0xd3, 0xd2);
+	poll_clear(ep + 0x18, 1U << 17, 0xd6);
+	if (!vc_state_matches(ep, 4) || !vc_state_matches(north, 0) ||
+	    !vc_state_matches(south, 4) ||
+	    (read32p(north + 0x2c) & VC_STATE_MASK) != 0x86000040 ||
+	    (read32p(south + 0x1c) & 0x7f0000) != 0x120000)
+		die_with_post_code(0xd5, "G31MX: VC completion readback mismatch\n");
+}
+
+/* The board ROM wrapper can repeat this read-only gate at its handoff boundary. */
+void g31mx_igfx_vc_check(void)
+{
+	if (CONFIG(G31MX_USE_IGFX)) {
+		vc_preflight();
+		vc_final_check();
+	}
 }
 
 /* 0xff600: byte read/modify/write table on ICH7 functions. */
@@ -56,7 +253,9 @@ static void lpc_table(void)
 		{ 31, 3, 0x40, 0x00, 0x01 }, { 31, 3, 0x04, 0x00, 0x03 },
 		{ 31, 0, 0x44, 0x00, 0x80 },
 		{ 31, 0, 0x4c, 0x00, 0x10 }, { 31, 0, 0x64, 0x00, 0xc0 },
-		{ 31, 0, 0xd9, 0x00, 0xc0 }, { 31, 0, 0xdc, 0x00, 0x00 },
+		/* Do not unmap the native XIP stage while applying the OEM table. */
+		{ 31, 0, 0xd9, 0x00, 0xc0 | FWH_ROM_DECODE_EN },
+		{ 31, 0, 0xdc, 0x00, 0x00 },
 		{ 31, 0, 0xb8, 0x00, 0x55 }, { 31, 0, 0xb9, 0x00, 0x55 },
 		{ 31, 0, 0xba, 0x00, 0x55 }, { 31, 0, 0xbb, 0x00, 0x55 },
 		{ 31, 0, 0x85, 0x00, 0x08 }, { 31, 0, 0x84, 0x00, 0x01 },
@@ -81,7 +280,7 @@ static void lpc_table(void)
 	 * for its 512 KiB flash. Keep the whole ROM decoded: bits 15:8 select
 	 * 512 KiB blocks downwards from 4 GiB, each with an alias 4 MiB lower.
 	 */
-	pci_or_config8(LPC, 0xd9, (0xff << (8 - MIN(CONFIG_ROM_SIZE / (512 * KiB), 8))) & 0xff);
+	pci_or_config8(LPC, 0xd9, FWH_ROM_DECODE_EN);
 }
 
 /* 0xf6369: GEN_PMCON_3. */
@@ -121,13 +320,13 @@ static void rcba_cir(void)
 		{ 0x0218, 0x00000000, 0x00020504 }, { 0x0220, 0xffffff00, 0x000000c5 },
 		{ 0x3410, 0xffffffbf, 0x00000040 }, { 0x3430, 0xfffffffc, 0x00000001 },
 		{ 0x3418, 0xfffffffe, 0x00000001 }, { 0x0200, 0xffff0000, 0x00002008 },
-		{ 0x2027, 0xffffff00, 0x0000000d }, { 0x2034, 0xfffffff0, 0x00000002 },
+		{ 0x2024, 0x00ffffff, 0x0d000000 }, { 0x2034, 0xfffffff0, 0x00000002 },
 		{ 0x3e08, 0xffffff7f, 0x00000080 }, { 0x3e48, 0xffffff7f, 0x00000080 },
-		{ 0x3e0e, 0xffffff7f, 0x00000080 }, { 0x3e4e, 0xffffff7f, 0x00000080 },
+		{ 0x3e0c, 0xff7fffff, 0x00800000 }, { 0x3e4c, 0xff7fffff, 0x00800000 },
 	};
 	unsigned int i;
 
-	/* The vendor code accesses these, unaligned ones included, as dwords. */
+	/* ICH7 p.263: dwords only; shift the three one-byte masks into aligned words. */
 	for (i = 0; i < ARRAY_SIZE(t); i++)
 		RCBA32(t[i].off) = (RCBA32(t[i].off) & t[i].and) | t[i].or;
 }
@@ -135,19 +334,9 @@ static void rcba_cir(void)
 /* 0xf6de0: egress port, DMI and ICH7 virtual channel set-up. */
 static void vc_setup(void)
 {
-	static const u32 ep_arb[8] = {
-		0x01000001, 0x00040000, 0x00001000, 0x00000040,
-		0x01000001, 0x00040000, 0x00001000, 0x00000040,
-	};
-	static const u8 rcba_arb[64] = {
-		0x0f, 0, 0, 0, 0, 0, 0x0f, 0, 0, 0, 0, 0, 0xf0, 0, 0, 0,
-		0, 0, 0, 0x0f, 0, 0, 0, 0, 0, 0xf0, 0, 0, 0, 0, 0, 0,
-		0x0f, 0, 0, 0, 0, 0, 0x0f, 0, 0, 0, 0, 0, 0xf0, 0, 0, 0,
-		0, 0, 0, 0x0f, 0, 0, 0, 0, 0, 0xf0, 0, 0, 0, 0, 0, 0,
-	};
 	unsigned int i;
 
-	RCBA8(0x341c) |= 1;
+	RCBA32(0x341c) |= 1;
 
 	epbar_clrbits32(0x14, 0xfe);
 	epbar_clrsetbits32(0x04, 0x07, 0x01);
@@ -155,20 +344,30 @@ static void vc_setup(void)
 	dmibar_setbits32(0x210, 0x09);
 	epbar_setbits32(0x20, 1 << 24);
 	epbar_clrsetbits32(0x20, 0xfe, 0x80);
+	if (CONFIG(G31MX_USE_IGFX))
+		vc_select_inactive(CONFIG_FIXED_EPBAR_MMIO_BASE, 4);
 	for (i = 0; i < ARRAY_SIZE(ep_arb); i++)
 		epbar_write32(0x100 + 4 * i, ep_arb[i]);
+	if (CONFIG(G31MX_USE_IGFX) && !vc_table_matches(CONFIG_FIXED_EPBAR_MMIO_BASE))
+		die_with_post_code(0xd5, "G31MX: EP table write did not latch\n");
 	epbar_setbits32(0x20, 1 << 16);
 	epbar_setbits32(0x20, 1 << 16);
-	poll_clear(CONFIG_FIXED_EPBAR_MMIO_BASE + 0x24, 1 << 16);
+	poll_clear(CONFIG_FIXED_EPBAR_MMIO_BASE + 0x24, 1 << 16, 0xcd);
 	epbar_setbits32(0x20, 1U << 31);
-	poll_clear(CONFIG_FIXED_EPBAR_MMIO_BASE + 0x24, 1 << 17);
+	if (CONFIG(G31MX_USE_IGFX))
+		vc_check_enabled(CONFIG_FIXED_EPBAR_MMIO_BASE, 4);
+	poll_clear(CONFIG_FIXED_EPBAR_MMIO_BASE + 0x24, 1 << 17, 0);
 
 	dmibar_clrbits32(0x14, 0xfe);
 	dmibar_clrsetbits32(0x04, 0x07, 0x01);
 	dmibar_setbits32(0x20, 1 << 24);
 	dmibar_clrsetbits32(0x20, 0xfe, 0x80);
+	if (CONFIG(G31MX_USE_IGFX))
+		vc_select_inactive(CONFIG_FIXED_DMIBAR_MMIO_BASE, 0);
 	dmibar_setbits32(0x20, 1U << 31);
-	poll_clear(CONFIG_FIXED_DMIBAR_MMIO_BASE + 0x24, 1 << 17);
+	if (CONFIG(G31MX_USE_IGFX))
+		vc_check_enabled(CONFIG_FIXED_DMIBAR_MMIO_BASE, 0);
+	poll_clear(CONFIG_FIXED_DMIBAR_MMIO_BASE + 0x24, 1 << 17, 0);
 
 	mchbar_clrsetbits32(0x48, 0x300, 0x200);
 	dmibar_setbits32(0xf4, 1 << 16);
@@ -176,7 +375,7 @@ static void vc_setup(void)
 	dmibar_setbits32(0xfc, 1 << 18);
 	mchbar_clrsetbits32(0x30, 0x30000, 0x20000);
 	dmibar_write32(0x2c, 0x86000040);
-	poll_clear(CONFIG_FIXED_DMIBAR_MMIO_BASE + 0x30, 1 << 17);
+	poll_clear(CONFIG_FIXED_DMIBAR_MMIO_BASE + 0x30, 1 << 17, 0);
 
 	dmibar_clrbits32(0x200, 1 << 21);
 	dmibar_clrbits32(0x204, 0xc00);
@@ -192,14 +391,20 @@ static void vc_setup(void)
 	RCBA32(0x20) = (RCBA32(0x20) & ~0xfe) | 0x80;
 	RCBA32(0x14) &= ~0xfe;
 	RCBA32(0x1c) = (RCBA32(0x1c) & 0xff80ffff) | 0x120000;
+	if (CONFIG(G31MX_USE_IGFX))
+		vc_select_inactive(CONFIG_FIXED_RCBA_MMIO_BASE, 4);
 	RCBA32(0x20) |= 1U << 31;
-	poll_clear(CONFIG_FIXED_RCBA_MMIO_BASE + 0x18, 1 << 17);
-	poll_clear(CONFIG_FIXED_RCBA_MMIO_BASE + 0x24, 1 << 17);
+	if (CONFIG(G31MX_USE_IGFX))
+		vc_check_enabled(CONFIG_FIXED_RCBA_MMIO_BASE, 4);
+	poll_clear(CONFIG_FIXED_RCBA_MMIO_BASE + 0x18, 1 << 17, 0);
+	poll_clear(CONFIG_FIXED_RCBA_MMIO_BASE + 0x24, 1 << 17, 0);
 	RCBA32(0x20) = (RCBA32(0x20) & 0xfff1ffff) | 0x80000;
-	for (i = 0; i < ARRAY_SIZE(rcba_arb); i++)
-		RCBA8(0x30 + i) = rcba_arb[i];
+	for (i = 0; i < ARRAY_SIZE(rcba_arb); i += 4)
+		RCBA32(0x30 + i) = rcba_arb_word(i);
+	if (CONFIG(G31MX_USE_IGFX) && !vc_table_matches(CONFIG_FIXED_RCBA_MMIO_BASE))
+		die_with_post_code(0xd5, "G31MX: DMI table write did not latch\n");
 	RCBA32(0x20) |= 1 << 16;
-	poll_clear(CONFIG_FIXED_RCBA_MMIO_BASE + 0x24, 1 << 16);
+	poll_clear(CONFIG_FIXED_RCBA_MMIO_BASE + 0x24, 1 << 16, 0xd3);
 
 	pci_update_config8(PCI_DEV(0, 1, 0), 0xec, 0xf8, 0x01);
 }
@@ -512,6 +717,8 @@ static void smbus_ssid(void)
 
 void g31mx_stock_preinit(void)
 {
+	if (CONFIG(G31MX_USE_IGFX))
+		vc_preflight();
 	lpc_table();
 	pmcon3();
 	ich_gpio();
@@ -524,6 +731,7 @@ void g31mx_stock_preinit(void)
 	legacy();
 	loader_pm();
 	peg_table();
+	g31mx_igfx_vc_check();
 	graphics_control();
 	tpm_wait();
 	smbus_ssid();

@@ -25,6 +25,7 @@ romstage-y += g31_rcven.c
 romstage-y += g31_warm.c
 romstage-y += g31_mrc_services.c
 romstage-y += g31_train.c
+ramstage-y += g31_gma.c
 endif
 
 ramstage-y += acpi.c

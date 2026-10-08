@@ -142,6 +142,19 @@ static void x4x_init(void *const chip_info)
 {
 	struct device *const d0f0 = pcidev_on_root(0x0, 0);
 
+	/* G31 RAM init picks the IGD or the PEG port; follow its choice. */
+	if (CONFIG(NORTHBRIDGE_INTEL_G31)) {
+		const u32 deven = pci_read_config32(d0f0, D0F0_DEVEN);
+		struct device *dev;
+
+		if (!(deven & D1EN) && (dev = pcidev_on_root(1, 0)))
+			dev->enabled = 0;
+		if (!(deven & IGD0EN) && (dev = pcidev_on_root(2, 0)))
+			dev->enabled = 0;
+		if (!(deven & IGD1EN) && (dev = pcidev_on_root(2, 1)))
+			dev->enabled = 0;
+	}
+
 	/* Hide internal functions based on devicetree info. */
 	hide_pci_dev(6, 0, 13); /* PEG1: only on P45 */
 	hide_pci_dev(3, 3, 6); /* ME */
