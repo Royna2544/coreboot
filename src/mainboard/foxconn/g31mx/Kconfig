@@ -53,6 +53,9 @@ config MAINBOARD_VERSION
 config POST_IO_PORT
 	default 0x80
 
+config SEABIOS_BOOTORDER_FILE
+	default "$(top)/src/mainboard/$(MAINBOARDDIR)/bootorder"
+
 # SeaBIOS misses full-speed devices EHCI hands to UHCI with its 100 ms default.
 config SEABIOS_USB_TIME_SIGATT
 	default 500
