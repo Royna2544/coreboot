@@ -18,6 +18,28 @@ config BOARD_SPECIFIC_OPTIONS
 config MAINBOARD_DIR
 	default "foxconn/g31mx"
 
+config G31MX_USE_IGFX
+	bool "Use onboard G31 VGA without a PEG graphics card"
+	default y
+	select ONBOARD_VGA_IS_PRIMARY
+	help
+	  Like the vendor BIOS, use a display controller in the PEG slot when
+	  one is fitted and the onboard analog VGA controller otherwise. The
+	  G31 cannot run both. Requires the board's Intel 8086:29c2 VGA
+	  option ROM.
+
+config OVERRIDE_DEVICETREE
+	default "variants/igfx/overridetree.cb" if G31MX_USE_IGFX
+
+config VGA_BIOS_ID
+	default "8086,29c2" if G31MX_USE_IGFX
+
+config VGA_BIOS_FILE
+	default "3rdparty/mainboard/foxconn/g31mx/vgabios.bin" if G31MX_USE_IGFX
+
+config SMM_RESERVED_SIZE
+	default 0 if G31MX_USE_IGFX && NO_STAGE_CACHE
+
 config MAINBOARD_PART_NUMBER
 	default "G31MX Series"
 

@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+chip northbridge/intel/x4x
+	device domain 0 on
+		device pci 1.0 on end		# PEG: used when it holds a display controller
+		device pci 2.0 on end		# G31 8086:29c2, analog VGA otherwise
+		device pci 2.1 off end
+	end
+end

@@ -29,6 +29,7 @@
 #include <device/pci_ops.h>
 #include <device/device.h>
 #include <device/pci_def.h>
+#include <device/pci_ids.h>
 #include <device/mmio.h>
 #include <device/smbus_host.h>
 #include <southbridge/intel/common/rcba.h>
@@ -814,6 +815,59 @@ static void g31_channel_decode(struct sysinfo *s)
 	s->nmode = (c0 == c1) ? 2 : 1;
 }
 
+/* Temporary secondary bus for the PEG probe; nothing is enumerated yet. */
+#define G31_PEG_PROBE_BUS	1
+/* PEG root port Slot Status (317495-001 section 6.1.43). */
+#define G31_PEG_SLOTSTS		0xba
+
+enum g31_peg_slot {
+	G31_PEG_EMPTY,
+	G31_PEG_CARD,
+	G31_PEG_DISPLAY,
+};
+
+/* Set once at channel decode, before anything depends on the IGD. */
+static bool g31_igd_used;
+
+/*
+ * Like the vendor BIOS (E000:b1db and E000:a5f0): read the PEG slot's
+ * Presence Detect State, then give the root port a temporary bus number to
+ * read the class of the card behind it. Slot Implemented resets to 1
+ * (Intel 317495-001 section 6.1.33), so PDS reflects the slot.
+ */
+static enum g31_peg_slot g31_peg_probe(void)
+{
+	const pci_devfn_t root = PCI_DEV(0, 1, 0);
+	const pci_devfn_t ep = PCI_DEV(G31_PEG_PROBE_BUS, 0, 0);
+	enum g31_peg_slot slot = G31_PEG_CARD;
+	u32 buses, id = 0xffffffff;
+	int i;
+
+	if (!(pci_read_config32(HOST_BRIDGE, D0F0_DEVEN) & D1EN) ||
+	    pci_read_config16(root, PCI_VENDOR_ID) != PCI_VID_INTEL ||
+	    !(pci_read_config16(root, G31_PEG_SLOTSTS) & PCI_EXP_SLTSTA_PDS))
+		return G31_PEG_EMPTY;
+
+	buses = pci_read_config32(root, PCI_PRIMARY_BUS);
+	pci_write_config32(root, PCI_PRIMARY_BUS, (buses & 0xff000000) |
+			   G31_PEG_PROBE_BUS << 16 | G31_PEG_PROBE_BUS << 8);
+	/* The link may still be training; give the card up to 100 ms. */
+	for (i = 0; i < 100; i++) {
+		id = pci_read_config32(ep, PCI_VENDOR_ID);
+		if (id != 0xffffffff && id != 0)
+			break;
+		mdelay(1);
+	}
+	if (id != 0xffffffff && id != 0 &&
+	    pci_read_config8(ep, PCI_CLASS_DEVICE + 1) == PCI_BASE_CLASS_DISPLAY)
+		slot = G31_PEG_DISPLAY;
+	pci_write_config32(root, PCI_PRIMARY_BUS, buses);
+
+	printk(BIOS_DEBUG, "G31: PEG slot %s (%08x)\n",
+	       slot == G31_PEG_DISPLAY ? "has a display controller" : "has a card", id);
+	return slot;
+}
+
 /* Fail closed at the host-map stage, before changing any map registers. */
 #define G31_POST_HOST_MAP_INVALID	0xe5
 
@@ -826,8 +880,13 @@ static bool g31_host_map(struct sysinfo *s)
 	const u32 gms_code = (ggc >> 4) & 0xf;
 	const u32 gtt_code = (ggc >> 8) & 3;
 	u32 gms, gtt;
-	/* 2 MiB, as native x4x: TSEG also holds the SMM stage cache. */
-	const u32 tseg = 2;
+	/* A 1-MiB TSEG stays aligned below the OEM 8-MiB framebuffer/1-MiB GTT. */
+	const bool igd = g31_igd_used;
+	const u32 tseg = igd ? 1 : 2;
+	const u64 reserved = (u64)CONFIG_SMM_RESERVED_SIZE + CONFIG_IED_REGION_SIZE +
+			     CONFIG_SMM_OPAL_S3_STATE_SMRAM_SIZE;
+	const u8 esmramc = pci_read_config8(HOST_BRIDGE, D0F0_ESMRAMC);
+	const u8 tseg_enable = igd ? 1 : 3;
 	/*
 	 * The reference code takes the size of the hole below 4 GiB from its
 	 * caller. The vendor BIOS passes 768 MiB (stock TOLUD 0xd0000000),
@@ -848,6 +907,20 @@ static bool g31_host_map(struct sysinfo *s)
 				   "G31: unsupported graphics memory allocation\n");
 	gms = gms_mib[gms_code];
 	gtt = gtt_code;
+
+	if (igd && (!gms ||
+	    (pci_read_config32(HOST_BRIDGE, D0F0_CAPID0 + 4) & (1U << 14)) ||
+	    !(pci_read_config32(HOST_BRIDGE, D0F0_DEVEN) & IGD0EN)))
+		die_with_post_code(G31_POST_HOST_MAP_INVALID,
+				   "G31: enabled IGD is unavailable or has no framebuffer\n");
+	if (reserved >= tseg * MiB ||
+	    (igd && (CONFIG_SMM_RESERVED_SIZE || !CONFIG(NO_STAGE_CACHE))))
+		die_with_post_code(G31_POST_HOST_MAP_INVALID,
+				   "G31: unsupported SMM reservation or stage cache\n");
+	/* D_LCK makes the stolen bases and TSEG controls read-only. */
+	if (pci_read_config8(HOST_BRIDGE, D0F0_SMRAM) & (1 << 4))
+		die_with_post_code(G31_POST_HOST_MAP_INVALID,
+				   "G31: host memory map is locked\n");
 
 	remap = (top - tolud) > 0x40;
 	if (remap) {
@@ -871,6 +944,9 @@ static bool g31_host_map(struct sysinfo *s)
 	gbsm = tolud - gms;
 	bgsm = gbsm - gtt;
 	tsegbase = bgsm - tseg;
+	if (!IS_ALIGNED(tsegbase, tseg))
+		die_with_post_code(G31_POST_HOST_MAP_INVALID,
+				   "G31: TSEG base is not aligned to its size\n");
 
 	pci_write_config16(HOST_BRIDGE, D0F0_REMAPBASE, remapbase);
 	pci_write_config16(HOST_BRIDGE, D0F0_REMAPLIMIT, remaplimit);
@@ -881,8 +957,22 @@ static bool g31_host_map(struct sysinfo *s)
 	pci_write_config32(HOST_BRIDGE, D0F0_GBSM, gbsm << 20);
 	pci_write_config32(HOST_BRIDGE, D0F0_BGSM, bgsm << 20);
 	pci_write_config32(HOST_BRIDGE, D0F0_TSEG, tsegbase << 20);
-	/* Enable TSEG with a 2 MiB size. */
-	pci_update_config8(HOST_BRIDGE, D0F0_ESMRAMC, ~0x07, (1 << 1) | (1 << 0));
+	/* Preserve RO cache bits and H_SMRAME; do not clear W1C E_SMERR. */
+	pci_write_config8(HOST_BRIDGE, D0F0_ESMRAMC, (esmramc & ~0x47) | tseg_enable);
+
+	if (pci_read_config16(HOST_BRIDGE, D0F0_REMAPBASE) != remapbase ||
+	    pci_read_config16(HOST_BRIDGE, D0F0_REMAPLIMIT) != remaplimit ||
+	    pci_read_config16(HOST_BRIDGE, D0F0_TOLUD) != tolud << 4 ||
+	    pci_read_config16(HOST_BRIDGE, D0F0_TOM) !=
+		(s->channel_capacity[0] + s->channel_capacity[1]) >> 6 ||
+	    pci_read_config16(HOST_BRIDGE, D0F0_TOUUD) != touud ||
+	    pci_read_config32(HOST_BRIDGE, D0F0_GBSM) != gbsm << 20 ||
+	    pci_read_config32(HOST_BRIDGE, D0F0_BGSM) != bgsm << 20 ||
+	    pci_read_config32(HOST_BRIDGE, D0F0_TSEG) != tsegbase << 20 ||
+	    (pci_read_config8(HOST_BRIDGE, D0F0_ESMRAMC) & ~0x40) !=
+		((esmramc & ~0x47) | tseg_enable))
+		die_with_post_code(G31_POST_HOST_MAP_INVALID,
+				   "G31: host memory map write did not latch\n");
 
 	return remap;
 }
@@ -1099,13 +1189,19 @@ static void g31_award_chipset_preinit(void)
 }
 
 /*
- * MCHBAR programming the Award boot block performs after the memory
+ * Programming the Award boot block performs after the memory
  * reference code (773F1P14 raw 0x75f94 and 0x7603c). The EPBAR writes at
  * 0x75f94 only run with CLKCFG[2:0] <= 2 and are left out like on FSB 1333.
  * Stock runtime has 0xfa4 bit 1 clear and 0xb68/0xb6c = 0xbd000000/0xbd.
  */
 static void g31_award_chipset_postinit(void)
 {
+	/*
+	 * 0x7603c also sets the IGD MSAC aperture size to 256 MiB
+	 * ((v & 0xfc) | 2); the 512 MiB default does not fit below 4 GiB.
+	 */
+	if (g31_igd_used)
+		pci_update_config8(PCI_DEV(0, 2, 0), 0x62, 0xfc, 0x02);
 	mchbar_clrbits32(0xfa4, 1 << 1);
 	mchbar_write32(0xb68, 0xbd000000);
 	mchbar_write32(0xb6c, 0xbd);
@@ -1143,6 +1239,7 @@ void g31_sdram_initialize(int boot_path, const u8 *spd_map)
 	u32 pmsts;
 	int warm_status;
 	int retained_memclk;
+	enum g31_peg_slot peg;
 	bool remap;
 	int i;
 	u32 fsb_strap;
@@ -1151,7 +1248,6 @@ void g31_sdram_initialize(int boot_path, const u8 *spd_map)
 		die_with_post_code(G31_POST_UNSUPPORTED_RESUME,
 				   "G31: S3 RAM init is not supported\n");
 	}
-
 
 	g31_award_chipset_preinit();
 
@@ -1272,7 +1368,15 @@ void g31_sdram_initialize(int boot_path, const u8 *spd_map)
 	g31_script30(&s);
 	g31_rank_decode(&s);
 	g31_channel_decode(&s);
-	if (!is_devfn_enabled(PCI_DEVFN(2, 0))) {
+	/*
+	 * Like the vendor BIOS, a display controller in the PEG slot takes
+	 * over from the IGD. The G31 cannot run both (317495-001 9.5.3).
+	 */
+	peg = is_devfn_enabled(PCI_DEVFN(1, 0)) ? g31_peg_probe() : G31_PEG_EMPTY;
+	g31_igd_used = is_devfn_enabled(PCI_DEVFN(2, 0)) && peg != G31_PEG_DISPLAY;
+	printk(BIOS_DEBUG, "G31: using %s graphics\n", g31_igd_used ? "integrated" :
+	       peg == G31_PEG_DISPLAY ? "PEG" : "no");
+	if (!g31_igd_used) {
 		/*
 		 * Like the vendor BIOS with an add-in graphics card: disable
 		 * the IGD and its stolen memory so it neither decodes legacy
@@ -1280,6 +1384,23 @@ void g31_sdram_initialize(int boot_path, const u8 *spd_map)
 		 */
 		pci_write_config16(HOST_BRIDGE, D0F0_GGC, 1 << 1);
 		pci_and_config32(HOST_BRIDGE, D0F0_DEVEN, ~(IGD0EN | IGD1EN));
+	} else {
+		/*
+		 * The IGD is used: like the vendor BIOS, leave the MRC with
+		 * DEVEN as it was and only now disable what is not used: an
+		 * empty PEG slot and what the devicetree leaves off.
+		 */
+		u32 off = 0;
+
+		if (peg == G31_PEG_EMPTY)
+			off |= D1EN;
+		if (!is_devfn_enabled(PCI_DEVFN(2, 1)))
+			off |= IGD1EN;
+		pci_and_config32(HOST_BRIDGE, D0F0_DEVEN, ~off);
+		pci_and_config16(HOST_BRIDGE, D0F0_GGC, ~(1 << 1));
+		if ((pci_read_config32(HOST_BRIDGE, D0F0_DEVEN) & (off | IGD0EN)) != IGD0EN ||
+		    (pci_read_config16(HOST_BRIDGE, D0F0_GGC) & (1 << 1)))
+			die("G31: IGD enable did not latch\n");
 	}
 	remap = g31_host_map(&s);
 	g31_final_decode(&s, remap);
