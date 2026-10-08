@@ -1,0 +1,9 @@
+/pci@i0cf8/*@1f,2/drive@0/disk@1
+/pci@i0cf8/*@1f,2/drive@1/disk@1
+/pci@i0cf8/*@1f,1/drive@0/disk@0
+/pci@i0cf8/isa@1f/fdc@03f0/floppy@0
+/pci@i0cf8/pci-bridge@1c,1/*@0
+/rom@img/memtest
+/rom@img/edk2
+/rom@img/tint
+/rom@img/coreinfo
