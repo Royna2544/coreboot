@@ -4,27 +4,32 @@
 entries
 
 # -----------------------------------------------------------------
-0	120	r	0	reserved_memory
+0	384	r	0	reserved_memory
 
 # -----------------------------------------------------------------
 # RTC_BOOT_BYTE (coreboot hardcoded)
 384	1	e	4	boot_option
 388	4	h	0	reboot_counter
 
+# The RTC century bytes (0x32, 0x37) change at run time; keep them out of
+# the checksummed range.
+400	8	r	0	reserved_century
+440	8	r	0	reserved_ibm_ps2_century
+
 # -----------------------------------------------------------------
 # coreboot config options: console
-395	4	e	6	debug_level
+448	4	e	6	debug_level
 
 # coreboot config options: southbridge
-408	1	e	1	nmi
-409	2	e	7	power_on_after_fail
+452	1	e	1	nmi
+453	2	e	7	power_on_after_fail
 
 # coreboot config options: mainboard
-411	1	e	8	cpu_fan_mode
-412	1	e	1	wake_on_lan
+455	1	e	8	cpu_fan_mode
+456	1	e	1	wake_on_lan
 
 # coreboot config options: check sums
-984	16	h	0	check_sum
+1008	16	h	0	check_sum
 
 # -----------------------------------------------------------------
 
@@ -53,4 +58,4 @@ enumerations
 # -----------------------------------------------------------------
 checksums
 
-checksum 392 983 984
+checksum 448 463 1008
