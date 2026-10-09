@@ -20,8 +20,9 @@ int g31_warm_preflight(enum g31_boot_path path, uint32_t pmsts,
 		       uint8_t coarse_out, uint8_t channels,
 		       unsigned int selected_memclk, unsigned int retained_memclk)
 {
+	/* S3 drops PWROK: nothing is retained, the trained values come from flash. */
 	if (path == G31_BOOT_RESUME)
-		return G31_WARM_RESUME_UNSUPPORTED;
+		return G31_WARM_OK;
 	if (path != G31_BOOT_COLD && path != G31_BOOT_WARM)
 		return G31_WARM_UNTRAINED;
 	if (!channels || (channels & ~PMSTS_SELF_REFRESH))
@@ -47,10 +48,12 @@ int g31_warm_preflight(enum g31_boot_path path, uint32_t pmsts,
 bool g31_step_selected(enum g31_mrc_optional_step step, enum g31_boot_path path)
 {
 	/* Masks from the OEM init table at ds:0x4c70, in execution order. */
-	static const uint8_t masks[] = { 0x06, 0x06, 0x06, 0x06, 0x06, 0x04, 0x51 };
+	static const uint8_t masks[] = {
+		0x06, 0x06, 0x06, 0x06, 0x06, 0x04, 0x51, 0x05, 0x05, 0x22,
+	};
 	uint8_t path_bit;
 
-	if (step < G31_STEP_CLOCK_CFG || step > G31_STEP_RCVEN_RESTORE)
+	if (step < G31_STEP_CLOCK_CFG || step > G31_STEP_RCVEN_RESUME)
 		return false;
 	switch (path) {
 	case G31_BOOT_COLD:
@@ -101,4 +104,38 @@ int g31_warm_restore(const struct g31_warm_ops *ops, void *ctx,
 				(lanes[lane / 4] >> ((lane % 4) * 4)) & 0x0f;
 	}
 	return 0;
+}
+
+static void g31_rmw32(const struct g31_warm_ops *ops, void *ctx, uint32_t offset,
+		      uint32_t clear, uint32_t set)
+{
+	ops->write32(ctx, offset, (ops->read32(ctx, offset) & ~clear) | set);
+}
+
+/*
+ * Resume step 0x82 (0xfffb8bec): S3 loses the trained receive-enable state,
+ * so write back the saved form that warm 0x82 reads from the registers.
+ * The OEM byte and word stores are done as aligned dword read-modify-writes.
+ */
+void g31_resume_restore(const struct g31_warm_ops *ops, void *ctx,
+			const struct g31_warm_result *saved)
+{
+	unsigned int ch, lane;
+
+	for (ch = 0; ch < 2; ch++) {
+		const uint32_t o = ch * 0x400;
+		const uint8_t coarse = saved->coarse[ch];
+		uint32_t lanes = 0;
+
+		for (lane = 0; lane < 8; lane++)
+			lanes |= (uint32_t)(saved->offset[ch][lane] & 0x0f) << (lane * 4);
+
+		/* 0x53d bits 3:2 */
+		g31_rmw32(ops, ctx, o + 0x53c, 3 << 10, (coarse & 3) << 10);
+		g31_rmw32(ops, ctx, o + 0x248, 0x000f0000, ((coarse >> 2) & 0x0f) << 16);
+		g31_rmw32(ops, ctx, o + 0x52c, 0xffff, lanes & 0xffff);
+		g31_rmw32(ops, ctx, o + 0x530, 0xffff, lanes >> 16);
+		g31_rmw32(ops, ctx, o + 0x534, 0xffff, 0x0924);
+		g31_rmw32(ops, ctx, o + 0x538, 0xffff, 0x0924);
+	}
 }
