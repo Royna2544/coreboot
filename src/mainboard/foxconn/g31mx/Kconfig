@@ -16,6 +16,7 @@ config BOARD_SPECIFIC_OPTIONS
 	select IOAPIC_USE_PRESET_ID
 	select HAVE_OPTION_TABLE
 	select HAVE_CMOS_DEFAULT
+	select HAVE_ACPI_RESUME
 
 config MAINBOARD_DIR
 	default "foxconn/g31mx"

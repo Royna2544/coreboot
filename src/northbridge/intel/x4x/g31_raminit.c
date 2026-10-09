@@ -23,6 +23,7 @@
 #include <cf9_reset.h>
 #include <commonlib/helpers.h>
 #include <lib.h>
+#include <mrc_cache.h>
 #include <types.h>
 #include <console/console.h>
 #include <delay.h>
@@ -815,6 +816,21 @@ static void g31_channel_decode(struct sysinfo *s)
 	s->nmode = (c0 == c1) ? 2 : 1;
 }
 
+/*
+ * Trained state kept in the MRC cache for S3 resume, like the vendor MRC's
+ * resume blob (saved through its 0x14 callback, restored by the resume step
+ * 0x82 at 0xfffb8bec): per channel the receive-enable coarse delay and lane
+ * offsets. The rest identifies the DIMMs and memory map it belongs to.
+ */
+#define G31_S3_DATA_VERSION	1
+
+struct g31_s3_data {
+	struct timings timings;
+	struct dimminfo dimms[4];
+	bool igd_used;
+	struct g31_warm_result rcven;
+};
+
 /* Temporary secondary bus for the PEG probe; nothing is enumerated yet. */
 #define G31_PEG_PROBE_BUS	1
 /* PEG root port Slot Status (317495-001 section 6.1.43). */
@@ -1207,6 +1223,7 @@ static void g31_award_chipset_postinit(void)
 	mchbar_write32(0xb6c, 0xbd);
 }
 
+
 void g31_sdram_initialize(int boot_path, const u8 *spd_map)
 {
 	static const struct g31_cold_ops ops = {
@@ -1230,6 +1247,9 @@ void g31_sdram_initialize(int boot_path, const u8 *spd_map)
 		.full_reset = g31_mrc_full_reset,
 	};
 	struct g31_warm_result recovered;
+	const struct g31_s3_data *resume = NULL;
+	struct g31_s3_data saved = {};
+	size_t resume_size;
 	struct g31_mrc_timer_state timer;
 	struct g31_dimm dimms[4] = {};
 	struct sysinfo s = {};
@@ -1244,9 +1264,17 @@ void g31_sdram_initialize(int boot_path, const u8 *spd_map)
 	int i;
 	u32 fsb_strap;
 
-	if (boot_path != BOOT_PATH_NORMAL && boot_path != BOOT_PATH_WARM_RESET) {
+	if (boot_path != BOOT_PATH_NORMAL && boot_path != BOOT_PATH_WARM_RESET &&
+	    boot_path != BOOT_PATH_RESUME)
 		die_with_post_code(G31_POST_UNSUPPORTED_RESUME,
-				   "G31: S3 RAM init is not supported\n");
+				   "G31: unknown boot path %d\n", boot_path);
+	if (boot_path == BOOT_PATH_RESUME) {
+		resume = mrc_cache_current_mmap_leak(MRC_TRAINING_DATA, G31_S3_DATA_VERSION,
+						     &resume_size);
+		if (!resume || resume_size != sizeof(*resume)) {
+			printk(BIOS_ERR, "G31: no trained state for S3 resume\n");
+			system_reset();
+		}
 	}
 
 	g31_award_chipset_preinit();
@@ -1345,10 +1373,13 @@ void g31_sdram_initialize(int boot_path, const u8 *spd_map)
 		g31_wait_calibration();
 	g31_temp_decode();
 	g31_pre_jedec(&s);
-	g31_jedec_init(&s, &ops);
+	/* On S3 resume the DRAM is in self-refresh with its mode registers set. */
+	if (g31_step_selected(G31_STEP_JEDEC, boot_path))
+		g31_jedec_init(&s, &ops);
 	g31_refresh_config(&s);
 	g31_refresh_enable();
-	g31_after_refresh(ranks, &ops, NULL);
+	if (g31_step_selected(G31_STEP_AFTER_REFRESH, boot_path))
+		g31_after_refresh(ranks, &ops, NULL);
 
 	if (g31_step_selected(G31_STEP_RCVEN_TRAIN, boot_path))
 		g31_rcven_train(&s);
@@ -1360,6 +1391,19 @@ void g31_sdram_initialize(int boot_path, const u8 *spd_map)
 			s.rcven_t[i].min_common_coarse = recovered.coarse[i];
 			memcpy(s.rcven_t[i].coarse_offset, recovered.offset[i],
 			       sizeof(recovered.offset[i]));
+		}
+	}
+	if (g31_step_selected(G31_STEP_RCVEN_RESUME, boot_path)) {
+		if (memcmp(&resume->timings, &s.selected_timings, sizeof(s.selected_timings)) ||
+		    memcmp(resume->dimms, s.dimms, sizeof(s.dimms))) {
+			printk(BIOS_ERR, "G31: DIMMs changed since the S3 state was saved\n");
+			system_reset();
+		}
+		g31_resume_restore(&warm_ops, NULL, &resume->rcven);
+		for (i = 0; i < 2; i++) {
+			s.rcven_t[i].min_common_coarse = resume->rcven.coarse[i];
+			memcpy(s.rcven_t[i].coarse_offset, resume->rcven.offset[i],
+			       sizeof(resume->rcven.offset[i]));
 		}
 	}
 	g31_rcven_apply(&s);
@@ -1374,6 +1418,10 @@ void g31_sdram_initialize(int boot_path, const u8 *spd_map)
 	 */
 	peg = is_devfn_enabled(PCI_DEVFN(1, 0)) ? g31_peg_probe() : G31_PEG_EMPTY;
 	g31_igd_used = is_devfn_enabled(PCI_DEVFN(2, 0)) && peg != G31_PEG_DISPLAY;
+	if (resume && resume->igd_used != g31_igd_used) {
+		printk(BIOS_ERR, "G31: graphics choice changed since the S3 state was saved\n");
+		system_reset();
+	}
 	printk(BIOS_DEBUG, "G31: using %s graphics\n", g31_igd_used ? "integrated" :
 	       peg == G31_PEG_DISPLAY ? "PEG" : "no");
 	if (!g31_igd_used) {
@@ -1411,9 +1459,25 @@ void g31_sdram_initialize(int boot_path, const u8 *spd_map)
 	mchbar_setbits32(0xa30, 1 << 26);
 	g31_mrc_timer_disable(&service_ops, NULL, &timer);
 
-	/* S3 resume is not supported here, so CBMEM always starts empty. */
-	if (cbmem_recovery(0))
+	if (cbmem_recovery(boot_path == BOOT_PATH_RESUME)) {
+		if (boot_path == BOOT_PATH_RESUME) {
+			printk(BIOS_ERR, "G31: CBMEM lost across S3, resetting\n");
+			system_reset();
+		}
 		die("G31: CBMEM initialization failed\n");
+	}
+	if (boot_path != BOOT_PATH_RESUME) {
+		memcpy(&saved.timings, &s.selected_timings, sizeof(saved.timings));
+		memcpy(saved.dimms, s.dimms, sizeof(saved.dimms));
+		saved.igd_used = g31_igd_used;
+		for (i = 0; i < 2; i++) {
+			saved.rcven.coarse[i] = s.rcven_t[i].min_common_coarse;
+			memcpy(saved.rcven.offset[i], s.rcven_t[i].coarse_offset,
+			       sizeof(saved.rcven.offset[i]));
+		}
+		mrc_cache_stash_data(MRC_TRAINING_DATA, G31_S3_DATA_VERSION, &saved,
+				     sizeof(saved));
+	}
 	if (g31_setup_memory_info(&s, dimms) != CB_SUCCESS)
 		printk(BIOS_WARNING, "G31: memory metadata unavailable\n");
 }

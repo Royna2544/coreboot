@@ -17,7 +17,6 @@ enum g31_warm_error {
 	G31_WARM_UNSAFE_RESET = -1,
 	G31_WARM_UNTRAINED = -2,
 	G31_WARM_CLOCK_MISMATCH = -3,
-	G31_WARM_RESUME_UNSUPPORTED = -4,
 };
 
 enum g31_mrc_optional_step {
@@ -28,6 +27,9 @@ enum g31_mrc_optional_step {
 	G31_STEP_WAIT_CAL,
 	G31_STEP_RCVEN_TRAIN,
 	G31_STEP_RCVEN_RESTORE,
+	G31_STEP_JEDEC,
+	G31_STEP_AFTER_REFRESH,
+	G31_STEP_RCVEN_RESUME,
 };
 
 struct g31_warm_ops {
@@ -50,5 +52,7 @@ int g31_warm_preflight(enum g31_boot_path path, uint32_t pmsts,
 bool g31_step_selected(enum g31_mrc_optional_step step, enum g31_boot_path path);
 int g31_warm_restore(const struct g31_warm_ops *ops, void *ctx,
 		     uint8_t expected_coarse, struct g31_warm_result *result);
+void g31_resume_restore(const struct g31_warm_ops *ops, void *ctx,
+			const struct g31_warm_result *saved);
 
 #endif /* __NORTHBRIDGE_INTEL_G31_WARM_H__ */
