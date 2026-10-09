@@ -6,6 +6,7 @@ romstage-y += gpio.c
 romstage-y += stock_preinit.c
 ramstage-$(CONFIG_G31MX_USE_IGFX) += stock_preinit.c
 ramstage-y += cstates.c
+smm-y += smihandler.c
 ramstage-y += mainboard.c
 ramstage-y += peg.c
 ramstage-y += power.c
