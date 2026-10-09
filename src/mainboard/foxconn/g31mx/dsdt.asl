@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 #include <acpi/acpi.h>
+#define ICH7_ACPI_GPIO 0
 DefinitionBlock(
 	"dsdt.aml",
 	"DSDT",

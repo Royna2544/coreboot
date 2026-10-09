@@ -4,6 +4,10 @@
 
 #include "../i82801gx.h"
 
+#ifndef ICH7_ACPI_GPIO
+#define ICH7_ACPI_GPIO 1
+#endif
+
 Scope(\)
 {
 	// IO-Trap at 0x800. This is the ACPI->SMI communication interface.
@@ -23,11 +27,11 @@ Scope(\)
 		Return (SMIF)	// Return value of SMI handler
 	}
 
-	// ICH7 Power Management Registers, located at PMBASE (0x1f.0 0x40.l)
-	OperationRegion(PMIO, SystemIO, DEFAULT_PMBASE, 0x80)
+	// GPE_CNTL is the only PMBASE register referenced by this field.
+	OperationRegion(PMIO, SystemIO, DEFAULT_PMBASE + 0x42, 0x02)
 	Field(PMIO, ByteAcc, NoLock, Preserve)
 	{
-		Offset(0x42),	// General Purpose Control
+		Offset(0x00),	// General Purpose Control
 		, 1,		// skip 1 bit
 		GPEC, 1,	// TCO status
 		, 9,		// skip 9 more bits
@@ -36,6 +40,7 @@ Scope(\)
 	}
 
 	// ICH7 GPIO IO mapped registers (0x1f.0 reg 0x48.l)
+#if ICH7_ACPI_GPIO
 	OperationRegion(GPIO, SystemIO, DEFAULT_GPIOBASE, 0x3c)
 	Field(GPIO, ByteAcc, NoLock, Preserve)
 	{
@@ -115,6 +120,7 @@ Scope(\)
 		GL06, 8,
 		GL07, 8
 	}
+#endif
 
 
 	// ICH7 Root Complex Register Block. Memory Mapped through RCBA)
@@ -155,7 +161,9 @@ Scope(\)
 
 }
 // General purpose GPIO access methods
+#if ICH7_ACPI_GPIO
 #include <southbridge/intel/common/acpi/gpio.asl>
+#endif
 
 // 0:1b.0 High Definition Audio (Azalia)
 #include <southbridge/intel/common/acpi/audio_ich.asl>
