@@ -69,6 +69,13 @@ static void i82801gx_pirq_init(struct device *dev)
 	struct device *irq_dev;
 	/* Get the chip configuration */
 	const struct southbridge_intel_i82801gx_config *config = dev->chip_info;
+	static const u16 dir_reg[] = { D27IR, D28IR, D29IR, D30IR, D31IR };
+	const u8 pirq_routing[] = {
+		config->pirqa_routing, config->pirqb_routing,
+		config->pirqc_routing, config->pirqd_routing,
+		config->pirqe_routing, config->pirqf_routing,
+		config->pirqg_routing, config->pirqh_routing,
+	};
 
 	pci_write_config8(dev, PIRQA_ROUT, config->pirqa_routing);
 	pci_write_config8(dev, PIRQB_ROUT, config->pirqb_routing);
@@ -85,22 +92,25 @@ static void i82801gx_pirq_init(struct device *dev)
 	 */
 
 	for (irq_dev = all_devices; irq_dev; irq_dev = irq_dev->next) {
-		u8 int_pin = 0, int_line = 0;
+		u8 int_pin = 0, int_line = 0, slot;
 
 		if (!is_enabled_pci(irq_dev))
 			continue;
 
 		int_pin = pci_read_config8(irq_dev, PCI_INTERRUPT_PIN);
+		if (int_pin < 1 || int_pin > 4)
+			continue;
 
-		switch (int_pin) {
-		case 1:
-			/* INTA# */ int_line = config->pirqa_routing; break;
-		case 2:
-			/* INTB# */ int_line = config->pirqb_routing; break;
-		case 3:
-			/* INTC# */ int_line = config->pirqc_routing; break;
-		case 4:
-			/* INTD# */ int_line = config->pirqd_routing; break;
+		slot = PCI_SLOT(irq_dev->path.pci.devfn);
+		if (is_pci_dev_on_bus(irq_dev, 0) && slot >= 27 && slot <= 31) {
+			const u16 reg = dir_reg[slot - 27];
+			const u32 route = RCBA32(reg & ~3);
+			const u8 pirq = (route >> (((reg & 2) * 8) + (int_pin - 1) * 4)) & 7;
+
+			int_line = pirq_routing[pirq];
+		} else {
+			/* Preserve the existing fallback for non-ICH7 devices. */
+			int_line = pirq_routing[int_pin - 1];
 		}
 
 		if (!int_line)

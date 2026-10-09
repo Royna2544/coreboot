@@ -4,6 +4,8 @@
 #include <console/console.h>
 #include <device/pci_ops.h>
 #include <northbridge/intel/x4x/x4x.h>
+#include <southbridge/intel/common/rcba.h>
+#include <southbridge/intel/i82801gx/i82801gx.h>
 #include <superio/ite/common/ite.h>
 #include <superio/ite/it8718f/it8718f.h>
 #include "stock_preinit.h"
@@ -22,6 +24,12 @@ void mb_pre_raminit_setup(int s3_resume)
 		die_with_post_code(0xc8, "G31MX: integrated graphics unavailable\n");
 
 	g31mx_stock_preinit();
+
+	/*
+	 * Stock D29IR routes UHCI/EHCI INTA-D to PIRQ H/D/C/A, as the DSDT does.
+	 * RCBA takes dword accesses only; D28IR is the upper half.
+	 */
+	RCBA32(D29IR) = (RCBA32(D29IR) & 0xffff0000) | 0x0237;
 
 	/*
 	 * The vendor MRC runs with the IGD and PEG both enabled (DEVEN 0x1b);
