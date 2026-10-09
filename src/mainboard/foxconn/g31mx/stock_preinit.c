@@ -665,7 +665,7 @@ static void loader_pm(void)
 
 	outb(0xfa, 0x70);
 	if ((inb(0x71) & 0x30) != 0x30)
-		pci_and_config8(LPC, GEN_PMCON_3, 0xfe);
+		pci_and_config8(LPC, GEN_PMCON_3, 0xfc);
 }
 
 /* 0xecd3e, 0xecd5c: ECAM enable and PEG port status/fix-up table. */

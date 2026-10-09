@@ -177,6 +177,7 @@ static void i82801gx_power_options(struct device *dev)
 	reg8 |= (3 << 4);	/* avoid #S4 assertions */
 	reg8 &= ~(1 << 3);	/* minimum assertion is 1 to 2 RTCCLK */
 
+	reg8 &= ~RTC_POWER_FAILED;
 	pci_write_config8(dev, GEN_PMCON_3, reg8);
 	printk(BIOS_INFO, "Set power %s after power failure.\n", state);
 
@@ -250,7 +251,7 @@ static void i82801gx_rtc_init(struct device *dev)
 	reg8 = pci_read_config8(dev, GEN_PMCON_3);
 	rtc_failed = reg8 & RTC_BATTERY_DEAD;
 	if (rtc_failed) {
-		reg8 &= ~RTC_BATTERY_DEAD;
+		reg8 &= ~(RTC_BATTERY_DEAD | RTC_POWER_FAILED);
 		pci_write_config8(dev, GEN_PMCON_3, reg8);
 	}
 	printk(BIOS_DEBUG, "rtc_failed = 0x%x\n", rtc_failed);
