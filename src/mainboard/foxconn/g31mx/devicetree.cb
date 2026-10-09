@@ -50,7 +50,11 @@ chip northbridge/intel/x4x
 						irq 0x70 = 4
 					end
 					device pnp 2e.2 off end	# COM2
-					device pnp 2e.3 off end	# Parallel
+					device pnp 2e.3 on	# Parallel, SPP (stock F0=0x08)
+						io 0x60 = 0x378
+						io 0x62 = 0
+						irq 0x70 = 7
+					end
 					device pnp 2e.4 off end	# Fan/thermal policy unqualified
 					device pnp 2e.5 on	# PS/2 keyboard
 						io 0x60 = 0x60

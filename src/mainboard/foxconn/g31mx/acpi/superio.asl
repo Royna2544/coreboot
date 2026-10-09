@@ -1,5 +1,10 @@
-/* SPDX-License-Identifier: CC-PDDC */
+/* SPDX-License-Identifier: GPL-2.0-only */
 
-/* Please update the license if adding licensable material. */
-
-/* dummy */
+Device (LPT1)
+{
+	Name (_HID, EISAID("PNP0400"))
+	Name (_CRS, ResourceTemplate () {
+		IO (Decode16, 0x0378, 0x0378, 0x08, 0x08)
+		IRQNoFlags () { 7 }
+	})
+}
