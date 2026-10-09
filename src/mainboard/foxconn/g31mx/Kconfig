@@ -14,6 +14,8 @@ config BOARD_SPECIFIC_OPTIONS
 	select FIXED_UART_FOR_CONSOLE
 	select POST_IO
 	select IOAPIC_USE_PRESET_ID
+	select HAVE_OPTION_TABLE
+	select HAVE_CMOS_DEFAULT
 
 config MAINBOARD_DIR
 	default "foxconn/g31mx"
