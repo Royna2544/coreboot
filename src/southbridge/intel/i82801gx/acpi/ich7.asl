@@ -35,8 +35,7 @@ Scope(\)
 		, 1,		// skip 1 bit
 		GPEC, 1,	// TCO status
 		, 9,		// skip 9 more bits
-		SCIS, 1,	// TCO DMI status
-		, 6		// To the end of the word
+		SCIS, 1		// TCO DMI status
 	}
 
 	// ICH7 GPIO IO mapped registers (0x1f.0 reg 0x48.l)
