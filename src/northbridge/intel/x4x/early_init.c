@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 
+#include <cf9_reset.h>
 #include <stdint.h>
 #include <device/pci_def.h>
 #include <device/pci_ops.h>
@@ -18,6 +19,17 @@ void x4x_early_init(void)
 	    pci_read_config16(HOST_BRIDGE, PCI_DEVICE_ID) != 0x29c0)
 		die_with_post_code(POSTCODE_HW_INIT_FAILURE,
 			"G31 northbridge device ID does not match 8086:29c0\n");
+
+	/*
+	 * TOLUD resets to 0x0010 on PLTRST# (317495-001 5.1.35). Any other value
+	 * means the CPU restarted without a platform reset (e.g. a keyboard
+	 * controller reset), with DRAM still initialized: reset the platform.
+	 */
+	if (CONFIG(NORTHBRIDGE_INTEL_G31) &&
+	    pci_read_config16(HOST_BRIDGE, D0F0_TOLUD) != 0x0010) {
+		printk(BIOS_NOTICE, "G31: memory map kept without a platform reset, resetting\n");
+		full_reset();
+	}
 
 	/* Setup MCHBAR. */
 	pci_write_config32(HOST_BRIDGE, D0F0_MCHBAR_LO, CONFIG_FIXED_MCHBAR_MMIO_BASE | 1);
