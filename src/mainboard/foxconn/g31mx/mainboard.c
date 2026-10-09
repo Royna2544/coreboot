@@ -12,7 +12,12 @@
 #include <device/mmio.h>
 #include <device/pci_def.h>
 #include <device/pci_ops.h>
+#include <device/pnp.h>
 #include <northbridge/intel/x4x/x4x.h>
+#include <option.h>
+#include <superio/hwm5_conf.h>
+#include <superio/ite/common/env_ctrl.h>
+#include <superio/ite/it8718f/it8718f.h>
 
 #define EHCI PCI_DEV(0, 0x1d, 7)
 
@@ -92,6 +97,48 @@ static void g31mx_usb_bus_reset(void *unused)
 BOOT_STATE_INIT_ENTRY(BS_DEV_INIT, BS_ON_EXIT, g31mx_usb_bus_reset, NULL);
 
 BOOT_STATE_INIT_ENTRY(BS_DEV_INIT, BS_ON_EXIT, g31mx_usb_final, NULL);
+
+/*
+ * Optional CPU_FAN (FAN_CTL2) curve on the CPU diode (TMPIN1), as the
+ * vendor "Smart Fan" setup item programs it (E000:7cdf): start PWM 0x40 at
+ * 40 C, slope 2 << 3, delta 3 C. The vendor BIOS never sets the full-speed
+ * limit (0x6a stays 127 C); use 70 C. SYS_FAN stays fully on, as stock.
+ */
+static void g31mx_cpu_fan_curve(u16 base)
+{
+	pnp_write_hwm5_index(base, ITE_EC_FAN_CTL_TEMP_LIMIT_OFF(2), 0);
+	pnp_write_hwm5_index(base, ITE_EC_FAN_CTL_TEMP_LIMIT_START(2), 40);
+	pnp_write_hwm5_index(base, ITE_EC_FAN_CTL_TEMP_LIMIT_FULL(2), 70);
+	pnp_write_hwm5_index(base, ITE_EC_FAN_CTL_PWM_START(2), 0x40);
+	pnp_write_hwm5_index(base, ITE_EC_FAN_CTL_PWM_AUTO(2), 2 << 3);
+	pnp_write_hwm5_index(base, ITE_EC_FAN_CTL_DELTA_TEMP(2), 3);
+	pnp_write_hwm5_index(base, ITE_EC_FAN_CTL_PWM_CONTROL(2),
+			     ITE_EC_FAN_CTL_PWM_MODE_AUTOMATIC | ITE_EC_FAN_CTL_TEMPIN(1));
+	pnp_write_hwm5_index(base, ITE_EC_FAN_MAIN_CTL,
+			     pnp_read_hwm5_index(base, ITE_EC_FAN_MAIN_CTL) |
+			     ITE_EC_FAN_MAIN_CTL_SMART(2));
+}
+
+static void g31mx_ec_final(void *unused)
+{
+	struct device *ec = dev_find_slot_pnp(0x2e, IT8718F_EC);
+	const struct resource *res;
+
+	if (!is_dev_enabled(ec))
+		return;
+
+	/*
+	 * The vendor SIO table makes PSON# follow PSIN (SLP_S3#) after AC
+	 * power returns; keep it consistent with the ICH7 AFTERG3 option.
+	 */
+	ite_ec_set_power_state(ec);
+
+	res = probe_resource(ec, PNP_IDX_IO0);
+	if (res && get_uint_option("cpu_fan_mode", 0))
+		g31mx_cpu_fan_curve(res->base);
+}
+
+BOOT_STATE_INIT_ENTRY(BS_DEV_INIT, BS_ON_EXIT, g31mx_ec_final, NULL);
 
 /* Number of logical CPUs sharing the L2 cache, from CPUID leaf 4. */
 static unsigned int l2_sharing(void)

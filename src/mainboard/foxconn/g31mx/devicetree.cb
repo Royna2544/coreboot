@@ -40,6 +40,16 @@ chip northbridge/intel/x4x
 			device pci 1e.3 off end		# AC'97 modem
 			device pci 1f.0 on		# ICH7 LPC 8086:27b8
 				chip superio/ite/it8718f
+					# Vendor EC setup (E000:6bb3): CPU diode, two
+					# thermistors, all voltage inputs, fans fully on.
+					register "TMPIN1.mode" = "THERMAL_DIODE"
+					register "TMPIN1.offset" = "0xfd"	# vendor family 6 value
+					register "TMPIN2.mode" = "THERMAL_RESISTOR"
+					register "TMPIN3.mode" = "THERMAL_RESISTOR"
+					register "ec.vin_mask" = "VIN_ALL"
+					register "FAN1.mode" = "FAN_MODE_ON"	# SYS_FAN
+					register "FAN2.mode" = "FAN_MODE_ON"	# CPU_FAN
+					register "FAN3.mode" = "FAN_MODE_ON"	# NB_FAN
 					device pnp 2e.0 on	# Floppy
 						io 0x60 = 0x3f0
 						irq 0x70 = 6
@@ -55,7 +65,11 @@ chip northbridge/intel/x4x
 						io 0x62 = 0
 						irq 0x70 = 7
 					end
-					device pnp 2e.4 off end	# Fan/thermal policy unqualified
+					device pnp 2e.4 on	# Environment controller
+						io 0x60 = 0x290
+						io 0x62 = 0
+						irq 0x70 = 0
+					end
 					device pnp 2e.5 on	# PS/2 keyboard
 						io 0x60 = 0x60
 						io 0x62 = 0x64
