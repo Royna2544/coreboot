@@ -37,8 +37,16 @@ void mb_pre_raminit_setup(int s3_resume)
 	 */
 	if (CONFIG(G31MX_USE_IGFX) &&
 	    ((pci_read_config16(HOST_BRIDGE, D0F0_GGC) & 0x3f2) != 0x130 ||
-	     pci_read_config32(PCI_DEV(0, 2, 0), 0) != 0x29c28086))
+	     pci_read_config32(PCI_DEV(0, 2, 0), 0) != 0x29c28086)) {
+		printk(BIOS_ERR,
+		       "G31MX: graphics state GGC=%04x DEVEN=%08x IGD=%08x SMRAM=%02x PMSTS=%08x\n",
+		       pci_read_config16(HOST_BRIDGE, D0F0_GGC),
+		       pci_read_config32(HOST_BRIDGE, D0F0_DEVEN),
+		       pci_read_config32(PCI_DEV(0, 2, 0), 0),
+		       pci_read_config8(HOST_BRIDGE, D0F0_SMRAM),
+		       mchbar_read32(PMSTS_MCHBAR));
 		die_with_post_code(0xc9, "G31MX: integrated graphics control failed\n");
+	}
 }
 
 void mb_get_spd_map(u8 spd_map[4])
