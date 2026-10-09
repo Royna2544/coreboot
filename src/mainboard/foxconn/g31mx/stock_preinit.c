@@ -29,6 +29,7 @@
 #define SIO_IDX		0x2e
 #define SIO_DAT		0x2f
 #define SIO_GPIO_BASE	0x800
+#define SIO_EC_BASE	0x290
 #define SMBUS		CONFIG_FIXED_SMBUS_IO_BASE
 
 #define FWH_ROM_DECODE_EN \
@@ -545,6 +546,17 @@ static void superio(void)
 		outb((inb(SIO_DAT) & rmw[i][1]) | rmw[i][2], SIO_DAT);
 	}
 	sio_exit();
+
+	/*
+	 * The EC (LDN4) is active from here. Its reset state (FAN_CTL active
+	 * low, PWM mode) stops SYS_FAN, and the vendor BIOS only leaves it at
+	 * POST 0x26 (E000:6bb3): set that end state now, active-high 23.4 kHz
+	 * output with all fans fully on.
+	 */
+	outb(0x14, SIO_EC_BASE + 5);
+	outb(0xd7, SIO_EC_BASE + 6);
+	outb(0x13, SIO_EC_BASE + 5);
+	outb(0x70, SIO_EC_BASE + 6);
 
 	outb(inb(SIO_GPIO_BASE + 1) | 0x04, SIO_GPIO_BASE + 1);
 	outb(inb(SIO_GPIO_BASE + 4) | 0x08, SIO_GPIO_BASE + 4);

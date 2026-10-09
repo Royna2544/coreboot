@@ -4,3 +4,4 @@ boot_option=Fallback
 debug_level=Warning
 power_on_after_fail=Disable
 nmi=Disable
+cpu_fan_mode=Full
