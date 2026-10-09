@@ -43,7 +43,7 @@ config SMM_RESERVED_SIZE
 	default 0 if G31MX_USE_IGFX && NO_STAGE_CACHE
 
 config MAINBOARD_PART_NUMBER
-	default "G31MX Series"
+	default "G31MX-K"
 
 # No per-board serial or fitted PCB revision has been verified.
 config MAINBOARD_SERIAL_NUMBER
