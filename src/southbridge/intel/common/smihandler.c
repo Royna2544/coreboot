@@ -161,10 +161,9 @@ static void southbridge_smi_sleep(void)
 		write_pmbase32(GPE0_EN, 0);
 
 		/* Always set the flag in case CMOS was changed on runtime. */
-		if (power_on_after_fail())
-			pci_and_config8(PCI_DEV(0, 0x1f, 0), D31F0_GEN_PMCON_3, ~1);
-		else
-			pci_or_config8(PCI_DEV(0, 0x1f, 0), D31F0_GEN_PMCON_3, 1);
+		pci_update_config8(PCI_DEV(0, 0x1f, 0), D31F0_GEN_PMCON_3,
+				   ~(RTC_POWER_FAILED | SLEEP_AFTER_POWER_FAIL),
+				   power_on_after_fail() ? 0 : SLEEP_AFTER_POWER_FAIL);
 
 		/* also iterates over all bridges on bus 0 */
 		busmaster_disable_on_bus(0);

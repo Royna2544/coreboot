@@ -81,8 +81,9 @@ void i82801gx_early_init(void)
 	/* program secondary mlt XXX byte? */
 	pci_write_config8(PCI_DEV(0, 0x1e, 0), SMLT, 0x20);
 
-	/* reset rtc power status */
-	pci_and_config8(PCI_DEV(0, 0x1f, 0), GEN_PMCON_3, ~RTC_BATTERY_DEAD);
+	/* reset rtc power status without acknowledging PWR_FLR (W1C) */
+	pci_and_config8(PCI_DEV(0, 0x1f, 0), GEN_PMCON_3,
+			~(RTC_BATTERY_DEAD | RTC_POWER_FAILED));
 
 	/* USB transient disconnect */
 	pci_or_config8(PCI_DEV(0, 0x1f, 0), 0xad, 3 << 0);
