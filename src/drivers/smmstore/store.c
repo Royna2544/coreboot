@@ -95,6 +95,10 @@ static int lookup_store(struct region_device *rstore)
 	if (boot_device_ro_subregion(&region, &read_rdev) < 0)
 		return -1;
 
+	/* Early stages without a writable boot device only read options. */
+	if (CONFIG(BOOT_DEVICE_SPI_FLASH_NO_EARLY_WRITES) && !ENV_RAMSTAGE && !ENV_SMM)
+		return rdev_chain(rstore, &read_rdev, 0, region_device_sz(&read_rdev));
+
 	if (boot_device_rw_subregion(&region, &write_rdev) < 0)
 		return -1;
 
