@@ -23,18 +23,18 @@ chip northbridge/intel/x4x
 			register "ide_enable_secondary" = "false"
 			register "sata_mode" = "SATA_MODE_IDE_PLAIN"
 
-			device pci 1b.0 on end		# HDA, ALC662 at codec address 2
+			device pci 1b.0 on subsystemid 0x105b 0x0df7 end		# HDA, ALC662 at codec address 2
 			device pci 1c.0 on end		# PCIe port 1
 			device pci 1c.1 on		# PCIe port 2: RTL8168
 				device pci 00.0 on end
 			end
 			device pci 1c.2 off end
 			device pci 1c.3 off end
-			device pci 1d.0 on end		# UHCI 1
-			device pci 1d.1 on end		# UHCI 2
-			device pci 1d.2 on end		# UHCI 3
-			device pci 1d.3 on end		# UHCI 4
-			device pci 1d.7 on end		# EHCI
+			device pci 1d.0 on subsystemid 0x105b 0x0df7 end		# UHCI 1
+			device pci 1d.1 on subsystemid 0x105b 0x0df7 end		# UHCI 2
+			device pci 1d.2 on subsystemid 0x105b 0x0df7 end		# UHCI 3
+			device pci 1d.3 on subsystemid 0x105b 0x0df7 end		# UHCI 4
+			device pci 1d.7 on subsystemid 0x105b 0x0df7 end		# EHCI
 			device pci 1e.0 on end		# PCI bridge
 			device pci 1e.2 off end		# AC'97 audio
 			device pci 1e.3 off end		# AC'97 modem
@@ -80,9 +80,9 @@ chip northbridge/intel/x4x
 					end
 				end
 			end
-			device pci 1f.1 on end		# PATA
-			device pci 1f.2 on end		# SATA in IDE mode
-			device pci 1f.3 on end		# SMBus
+			device pci 1f.1 on subsystemid 0x105b 0x0df7 end		# PATA
+			device pci 1f.2 on subsystemid 0x105b 0x0df7 end		# SATA in IDE mode
+			device pci 1f.3 on subsystemid 0x105b 0x0df7 end		# SMBus
 		end
 	end
 end
