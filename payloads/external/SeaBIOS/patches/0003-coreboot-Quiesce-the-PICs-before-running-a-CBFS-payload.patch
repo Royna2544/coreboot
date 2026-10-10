@@ -1,0 +1,52 @@
+From a501e10a90266f9f88ad847135a68945032d87c7 Mon Sep 17 00:00:00 2001
+From: Royna2544 <whiteshell2544@naver.com>
+Date: Sat, 10 Oct 2026 23:22:03 +0900
+Subject: [PATCH] coreboot: Quiesce the PICs before running a CBFS payload
+
+cbfs_run_payload() jumped to the payload with the 8259s still at the
+BIOS vector base 0x08, the BIOS IRQs (timer, keyboard, ...) unmasked
+and possibly an interrupt request latched while SeaBIOS ran with
+interrupts disabled. A payload that enables interrupts before taking
+over the PICs, such as edk2's CpuDxe, then takes that request on an
+exception vector, or as a spurious IRQ7 if the PICs were only masked.
+On a Foxconn G31MX-K edk2 stopped with "X64 Exception Type - 0F" in
+CpuDxe, and with "Type - 27" after only moving the vector base.
+
+Before the jump, mask the PICs, let a latched request reach the BIOS
+handlers through yield(), then reinitialise the PICs to vector bases
+0x20/0x28, as coreboot leaves them, with all inputs masked.
+---
+ src/fw/coreboot.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/src/fw/coreboot.c b/src/fw/coreboot.c
+index 7c0954b5..572fa859 100644
+--- a/src/fw/coreboot.c
++++ b/src/fw/coreboot.c
+@@ -9,6 +9,7 @@
+ #include "config.h" // CONFIG_*
+ #include "e820map.h" // e820_add
+ #include "hw/pcidevice.h" // pci_probe_devices
++#include "hw/pic.h" // pic_irqmask_write
+ #include "lzmadecode.h" // LzmaDecode
+ #include "malloc.h" // free
+ #include "output.h" // dprintf
+@@ -519,6 +520,15 @@ cbfs_run_payload(struct cbfs_file *fhdr)
+             break;
+         case PAYLOAD_SEGMENT_ENTRY: {
+             dprintf(1, "Calling addr %p\n", dest);
++            // The payload sets up its own interrupt handling. Mask the PICs
++            // and let an interrupt request that is already latched reach
++            // the BIOS handlers (as spurious IRQ7), so the payload does not
++            // take it when it first enables interrupts. Then move the PICs
++            // off the exception vectors, as coreboot leaves them.
++            pic_irqmask_write(0xffff);
++            yield();
++            pic_reset(0x20, 0x28);
++            pic_irqmask_write(0xffff);
+             void (*func)(void) = dest;
+             func();
+             return;
+-- 
+2.56.0
+
