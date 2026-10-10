@@ -17,6 +17,11 @@ DefinitionBlock(
 	Scope (\_SB) {
 		Device (PCI0)
 		{
+			/*
+			 * As the vendor DSDT: Windows derives the instance IDs of all
+			 * PCI devices from this, so it keeps the drivers it installed.
+			 */
+			Name (_UID, 1)
 			#include <northbridge/intel/x4x/acpi/x4x.asl>
 			#include <southbridge/intel/i82801gx/acpi/ich7.asl>
 		}
