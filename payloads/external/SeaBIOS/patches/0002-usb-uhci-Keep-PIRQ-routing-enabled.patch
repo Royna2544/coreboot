@@ -1,0 +1,46 @@
+From ad87fa6521cc753971daa8fa84975900096b6d1a Mon Sep 17 00:00:00 2001
+From: Royna2544 <whiteshell2544@naver.com>
+Date: Wed, 7 Oct 2026 16:11:45 +0900
+Subject: [PATCH] usb-uhci: Keep PIRQ routing enabled
+
+reset_uhci() writes only the R/WC bits to USBLEGSUP, which also clears
+USBPIRQDEN. SeaBIOS polls and does not need the interrupt, but an OS
+driver that relies on the routing left by the firmware then never gets
+UHCI interrupts. Keep USBPIRQDEN set; USBINTR stays 0 while SeaBIOS
+owns the controller.
+---
+ src/hw/usb-uhci.c | 5 +++--
+ src/hw/usb-uhci.h | 1 +
+ 2 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/src/hw/usb-uhci.c b/src/hw/usb-uhci.c
+index 075ed02c..5fcb8048 100644
+--- a/src/hw/usb-uhci.c
++++ b/src/hw/usb-uhci.c
+@@ -164,8 +164,9 @@ reset_uhci(struct usb_uhci_s *cntl, u16 bdf)
+ {
+     // XXX - don't reset if not needed.
+ 
+-    // Reset PIRQ and SMI
+-    pci_config_writew(bdf, USBLEGSUP, USBLEGSUP_RWC);
++    // Clear the legacy SMI enables and status, but keep PIRQ routing
++    // enabled for the OS driver, as a BIOS hands UHCI over.
++    pci_config_writew(bdf, USBLEGSUP, USBLEGSUP_RWC | USBLEGSUP_PIRQEN);
+ 
+     // Reset the HC
+     outw(USBCMD_HCRESET, cntl->iobase + USBCMD);
+diff --git a/src/hw/usb-uhci.h b/src/hw/usb-uhci.h
+index bff70c66..65a92d96 100644
+--- a/src/hw/usb-uhci.h
++++ b/src/hw/usb-uhci.h
+@@ -36,6 +36,7 @@ int uhci_poll_intr(struct usb_pipe *p, void *data);
+ /* Legacy support register */
+ #define USBLEGSUP               0xc0
+ #define   USBLEGSUP_RWC         0x8f00  /* the R/WC bits */
++#define   USBLEGSUP_PIRQEN      0x2000  /* PIRQ enable */
+ 
+ /* Command register */
+ #define USBCMD          0
+-- 
+2.56.0
+
