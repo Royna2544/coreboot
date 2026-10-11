@@ -20,6 +20,15 @@ config BOARD_SPECIFIC_OPTIONS
 	select DRIVERS_OPTION_CFR_ENABLED
 	select DRIVERS_EFI_VARIABLE_STORE if SMMSTORE
 
+config G31MX_POST_BEEPS
+	string "POST beep sequence"
+	default "896:80"
+	help
+	  Notes played at the end of POST, separated by spaces, each as
+	  <frequency in Hz>:<duration in ms>. A frequency of 0 is a pause.
+	  Leave empty for no beep. The default is the vendor BIOS's single
+	  POST beep. Example: "1047:100 0:50 1319:100 0:50 1568:200".
+
 config MAINBOARD_DIR
 	default "foxconn/g31mx"
 

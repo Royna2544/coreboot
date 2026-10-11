@@ -6,6 +6,7 @@
 #include <arch/io.h>
 #include <arch/ioapic.h>
 #include <bootstate.h>
+#include <ctype.h>
 #include <console/console.h>
 #include <delay.h>
 #include <device/device.h>
@@ -157,6 +158,40 @@ static unsigned int l2_sharing(void)
 	return 1;
 }
 
+/* Play CONFIG_G31MX_POST_BEEPS: space-separated <Hz>:<ms> notes, 0 Hz = pause. */
+static void post_beeps(void)
+{
+	const char *p = CONFIG_G31MX_POST_BEEPS;
+
+	for (;;) {
+		unsigned int hz = 0, ms = 0;
+
+		while (*p == ' ')
+			p++;
+		if (!*p)
+			return;
+		if (!isdigit(*p))
+			break;
+		while (isdigit(*p))
+			hz = hz * 10 + (*p++ - '0');
+		if (*p++ != ':' || !isdigit(*p))
+			break;
+		while (isdigit(*p))
+			ms = ms * 10 + (*p++ - '0');
+		if (*p && *p != ' ')
+			break;
+		/* The PIT counter is 16 bits wide: 1193182 Hz / 65535 = 19 Hz. */
+		if (hz && hz < 19)
+			break;
+		if (hz)
+			beep(hz, ms);
+		else
+			mdelay(ms);
+	}
+	printk(BIOS_WARNING, "G31MX: malformed POST beep sequence \"%s\"\n",
+	       CONFIG_G31MX_POST_BEEPS);
+}
+
 static void mainboard_final(void *unused)
 {
 	const unsigned int cpus = dev_count_cpu();
@@ -180,10 +215,11 @@ static void mainboard_final(void *unused)
 	mchbar_clrsetbits8(0x40, 0x38, (dies - 1) << 3);
 
 	/*
-	 * One POST beep, as the vendor BIOS gives: PIT divisor 0x533 (896 Hz)
-	 * for 0x5000 x 4 port 0xeb delays (system BIOS F000:EE3C, BL = 1).
+	 * The default sequence is the vendor BIOS's POST beep: PIT divisor
+	 * 0x533 (896 Hz) for 0x5000 x 4 port 0xeb delays (system BIOS
+	 * F000:EE3C, BL = 1).
 	 */
-	beep(896, 80);
+	post_beeps();
 }
 
 struct chip_operations mainboard_ops = {
