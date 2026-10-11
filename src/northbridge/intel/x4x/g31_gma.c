@@ -341,7 +341,6 @@ static struct device_operations g31_gma_ops = {
 	.set_resources		= pci_dev_set_resources,
 	.enable_resources	= pci_dev_enable_resources,
 #if CONFIG(HAVE_ACPI_TABLES)
-	.write_acpi_tables	= pci_rom_write_acpi_tables,
 	.acpi_fill_ssdt		= pci_rom_ssdt,
 #endif
 	.acpi_name		= g31_gma_acpi_name,
