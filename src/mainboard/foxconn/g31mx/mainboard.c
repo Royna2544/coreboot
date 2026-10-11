@@ -15,6 +15,7 @@
 #include <device/pnp.h>
 #include <northbridge/intel/x4x/x4x.h>
 #include <option.h>
+#include <pc80/i8254.h>
 #include <superio/hwm5_conf.h>
 #include <superio/ite/common/env_ctrl.h>
 #include <superio/ite/it8718f/it8718f.h>
@@ -177,6 +178,12 @@ static void mainboard_final(void *unused)
 	if (dies > 8)
 		die("G31MX: %u dies do not fit the Stop-Grant count\n", dies);
 	mchbar_clrsetbits8(0x40, 0x38, (dies - 1) << 3);
+
+	/*
+	 * One POST beep, as the vendor BIOS gives: PIT divisor 0x533 (896 Hz)
+	 * for 0x5000 x 4 port 0xeb delays (system BIOS F000:EE3C, BL = 1).
+	 */
+	beep(896, 80);
 }
 
 struct chip_operations mainboard_ops = {
