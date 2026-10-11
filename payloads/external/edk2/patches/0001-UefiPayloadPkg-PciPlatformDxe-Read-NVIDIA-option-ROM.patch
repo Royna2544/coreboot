@@ -1,0 +1,128 @@
+From e1ca0c6d72a21539bd502c593d3c1d146b5b64bf Mon Sep 17 00:00:00 2001
+From: Royna2544 <whiteshell2544@naver.com>
+Date: Sun, 11 Oct 2026 18:13:40 +0900
+Subject: [PATCH] UefiPayloadPkg/PciPlatformDxe: Read NVIDIA option ROMs from
+ the EEPROM
+
+When a legacy BIOS (e.g. SeaBIOS chained before this payload) has run
+the VBIOS of an NVIDIA GPU, the GPU serves expansion ROM BAR reads from
+a shadow copy in VRAM while NV_PBUS_PCI_NV_20 (mirrored at PCI config
+offset 0x50) bit 0 is set. That copy no longer holds the ROM, so
+PciGetPciRom() finds no image and an EFI driver in the ROM is never
+loaded.
+
+Clear the bit while reading the ROM and restore it afterwards, as the
+Linux nouveau driver does before reading the PROM.
+
+Tested on a GeForce GTX 650 Ti (10de:11c6) behind SeaBIOS: the ROM BAR
+returned unrelated data with the bit set and the VBIOS image with it
+clear; PciIo.RomSize went from 0 to 0xF600.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Signed-off-by: Royna2544 <whiteshell2544@naver.com>
+---
+ .../PciPlatformDxe/PciPlatformDxe.c           | 60 +++++++++++++++++++
+ 1 file changed, 60 insertions(+)
+
+diff --git a/UefiPayloadPkg/PciPlatformDxe/PciPlatformDxe.c b/UefiPayloadPkg/PciPlatformDxe/PciPlatformDxe.c
+index 9bbb911eb2..738ca21a7e 100644
+--- a/UefiPayloadPkg/PciPlatformDxe/PciPlatformDxe.c
++++ b/UefiPayloadPkg/PciPlatformDxe/PciPlatformDxe.c
+@@ -12,6 +12,10 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ #include <Bus/Pci/PciBusDxe/PciBus.h>
+ #include <Bus/Pci/PciBusDxe/PciOptionRomSupport.h>
+ 
++#define NVIDIA_VENDOR_ID                0x10DE
++#define NV_PBUS_PCI_NV_20               0x50
++#define NV_PBUS_PCI_NV_20_ROM_SHADOW    BIT0
++
+ EFI_STATUS
+ EFIAPI
+ PciPlatformNotify (
+@@ -95,6 +99,9 @@ PciGetPciRom (
+   UINT32                    LegacyImageLength;
+   UINT8                     *RomInMemory;
+   UINT8                     CodeType;
++  UINT16                    VendorId;
++  UINT32                    NvRomShadow;
++  UINT32                    NvRomDirect;
+   PCI_EXPANSION_ROM_HEADER  RomHeader;
+   PCI_DATA_STRUCTURE        RomPcir;
+ 
+@@ -114,6 +121,7 @@ PciGetPciRom (
+ 
+   *RomImage = NULL;
+   *RomSize  = 0;
++  VendorId  = 0;
+ 
+   Status = gBS->HandleProtocol (
+                   PciHandle,
+@@ -175,6 +183,45 @@ PciGetPciRom (
+     goto CloseAndReturn;
+   }
+ 
++  //
++  // An NVIDIA GPU whose VBIOS has run (e.g. by a legacy BIOS before us)
++  // serves ROM BAR reads from a shadow copy in VRAM while NV_PBUS_PCI_NV_20
++  // (mirrored at config offset 0x50) bit 0 is set. Read the EEPROM instead.
++  //
++  Status = PciIo->Pci.Read (
++                        PciIo,
++                        EfiPciIoWidthUint16,
++                        PCI_VENDOR_ID_OFFSET,
++                        1,
++                        &VendorId
++                        );
++  if (EFI_ERROR (Status)) {
++    goto CloseAndReturn;
++  }
++
++  if (VendorId == NVIDIA_VENDOR_ID) {
++    Status = PciIo->Pci.Read (
++                          PciIo,
++                          EfiPciIoWidthUint32,
++                          NV_PBUS_PCI_NV_20,
++                          1,
++                          &NvRomShadow
++                          );
++    if (EFI_ERROR (Status)) {
++      VendorId = 0;
++      goto CloseAndReturn;
++    }
++
++    NvRomDirect = NvRomShadow & ~NV_PBUS_PCI_NV_20_ROM_SHADOW;
++    PciIo->Pci.Write (
++                 PciIo,
++                 EfiPciIoWidthUint32,
++                 NV_PBUS_PCI_NV_20,
++                 1,
++                 &NvRomDirect
++                 );
++  }
++
+   //
+   // The bit0 is 0 to prevent the enabling of the Rom address decoder
+   //
+@@ -396,6 +443,19 @@ RestoreBar:
+                );
+ 
+ CloseAndReturn:
++  //
++  // Restore the NVIDIA ROM shadow setting
++  //
++  if (VendorId == NVIDIA_VENDOR_ID) {
++    PciIo->Pci.Write (
++                 PciIo,
++                 EfiPciIoWidthUint32,
++                 NV_PBUS_PCI_NV_20,
++                 1,
++                 &NvRomShadow
++                 );
++  }
++
+   //
+   // Close the I/O Abstraction(s) used to perform the supported test
+   //
+-- 
+2.56.0
+

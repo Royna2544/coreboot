@@ -293,6 +293,11 @@ $(EDK2_PATH): $(WORKSPACE)
 			echo "    Checking out $(project_name) revision $(CONFIG_EDK2_TAG_OR_REV)"; \
 			git checkout --detach $(CONFIG_EDK2_TAG_OR_REV) -f; \
 			git submodule update --checkout --recursive; \
+			for patch in $(sort $(wildcard $(CURDIR)/patches/*.patch)); do \
+				echo "    Applying $$(basename $$patch)"; \
+				git -c commit.gpgsign=false am -q --keep-cr \
+					--committer-date-is-author-date $$patch || exit 1; \
+			done; \
 		else \
 			echo "    Working directory not clean; will not overwrite"; \
 		fi; \
